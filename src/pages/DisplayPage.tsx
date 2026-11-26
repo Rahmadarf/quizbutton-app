@@ -175,6 +175,11 @@ export function DisplayPage() {
       <header className="border-b border-[#cbd5f5] bg-[#ffffff] px-6 py-3.5">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
+            <img
+              src="/logo-issc.png"
+              alt="Logo ISSC"
+              className="h-9 w-auto object-contain"
+            />
             <div className="flex items-center gap-2 rounded-[8px] border border-[#cbd5f5] bg-[#eaf0ff] px-3.5 py-1.5">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#2a55d6]">
                 Room

@@ -76,32 +76,43 @@ export function JoinPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      <div className="container mx-auto max-w-4xl px-4 py-8">
-        <button
-          type="button"
-          onClick={() => navigate(`/${preservedQuery}`)}
-          className="mb-6 inline-flex h-9 cursor-pointer items-center justify-center rounded-md px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-white/80 hover:text-black"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Back to Home
-        </button>
+    <div className="classmeet-theme min-h-screen bg-[#ffffff] text-[#0b1437]">
+      <div className="mx-auto max-w-4xl px-4 py-8">
+        <div className="mb-6 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => navigate(`/${preservedQuery}`)}
+            className="inline-flex h-9 cursor-pointer items-center justify-center rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] px-3.5 text-sm font-semibold text-[#2a55d6] transition-colors hover:bg-[#eaf0ff]"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Kembali
+          </button>
+
+          <img
+            src="/logo-issc.png"
+            alt="Logo ISSC"
+            className="h-9 w-auto object-contain"
+          />
+        </div>
 
         <div className="flex items-center justify-center">
-          <div className="flex w-full max-w-md flex-col gap-6 rounded-xl border bg-card py-6 text-card-foreground shadow-sm">
+          <div className="flex w-full max-w-md flex-col gap-6 rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] py-6 shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]">
             <div className="grid gap-1.5 px-6 text-center">
-              <h1 className="text-3xl leading-none font-semibold">
-                {isNewRoom ? 'Create Your Profile' : 'Join Room'}
+              <p className="text-[12px] font-semibold uppercase tracking-[0.12em] text-[#2a55d6]">
+                {isNewRoom ? 'Profil Peserta' : `Kode Room: ${normalizedRoomId}`}
+              </p>
+              <h1 className="text-3xl leading-none font-bold text-[#0b1437]">
+                {isNewRoom ? 'Buat Profil' : 'Gabung Room'}
               </h1>
-              <p className="text-base text-muted-foreground">
-                {isNewRoom ? 'Choose your name and color' : `Room Code: ${normalizedRoomId}`}
+              <p className="text-sm text-[#434d7e]">
+                Masukkan nama tim atau nama peserta lalu pilih warna
               </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6 px-6">
               <div className="space-y-2">
-                <label htmlFor="player-name" className="text-sm leading-none font-medium">
-                  Your Name
+                <label htmlFor="player-name" className="text-sm leading-none font-semibold text-[#0b1437]">
+                  Nama Peserta / Tim
                 </label>
                 <input
                   id="player-name"
@@ -109,16 +120,18 @@ export function JoinPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={20}
-                  placeholder="Enter your name"
+                  placeholder="Contoh: Tim Alpha"
                   autoFocus
                   required
-                  className="mt-1.5 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none transition focus-visible:ring-2 focus-visible:ring-ring md:text-sm"
+                  className="mt-1.5 flex h-10 w-full rounded-[8px] border border-[#8e9cd6] bg-[#f3f6ff] px-3 py-1 text-base text-[#0b1437] placeholder:text-[#5c6694] md:text-sm"
                 />
               </div>
 
               <div className="space-y-2">
-                <span className="block text-sm leading-none font-medium">Choose Your Color</span>
-                <div className="mt-1.5 grid grid-cols-4 gap-3" role="radiogroup" aria-label="Choose Your Color">
+                <span className="block text-sm leading-none font-semibold text-[#0b1437]">
+                  Pilih Warna
+                </span>
+                <div className="mt-1.5 grid grid-cols-4 gap-3" role="radiogroup" aria-label="Pilih Warna">
                   {PLAYER_COLORS.map((color) => {
                     const isSelected = selectedColor.toLowerCase() === color.value.toLowerCase()
                     return (
@@ -131,10 +144,10 @@ export function JoinPage() {
                         title={color.name}
                         onClick={() => setSelectedColor(color.value)}
                         style={{ backgroundColor: color.value }}
-                        className={`h-16 transform cursor-pointer rounded-lg transition-all duration-200 hover:scale-105 ${
+                        className={`h-14 transform cursor-pointer rounded-[8px] transition-all duration-200 hover:scale-105 ${
                           isSelected
-                            ? 'scale-105 ring-4 ring-gray-400 ring-offset-2'
-                            : 'hover:ring-2 hover:ring-gray-300 hover:ring-offset-2'
+                            ? 'scale-105 ring-4 ring-[#0d2be3] ring-offset-2'
+                            : 'hover:ring-2 hover:ring-[#8e9cd6] hover:ring-offset-2'
                         }`}
                       />
                     )
@@ -145,9 +158,9 @@ export function JoinPage() {
               <button
                 type="submit"
                 disabled={!name.trim()}
-                className="inline-flex h-10 w-full cursor-pointer items-center justify-center rounded-md bg-primary px-6 text-sm font-medium text-primary-foreground shadow-xs transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-11 w-full cursor-pointer items-center justify-center rounded-[8px] bg-[#0d2be3] px-6 text-sm font-bold text-[#ffffff] transition-colors hover:bg-[#0a21b4] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {isNewRoom ? 'Create Room' : 'Join Room'}
+                {isNewRoom ? 'Masuk Room' : 'Gabung Room'}
               </button>
             </form>
           </div>

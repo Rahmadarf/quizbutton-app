@@ -1,8 +1,8 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Timer, Users, Zap } from 'lucide-react'
+import { ArrowRight, Timer, Users, Zap } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
-import { generateRoomCode, normalizeRoomCode } from '../lib/playerStorage'
+import { normalizeRoomCode } from '../lib/playerStorage'
 
 export function HomePage() {
   const navigate = useNavigate()
@@ -14,139 +14,131 @@ export function HomePage() {
   const handleJoinSubmit = (e: FormEvent) => {
     e.preventDefault()
     const normalized = normalizeRoomCode(roomCode)
-    if (normalized.length !== 6) {
-      toast.error('Please enter a 6-character room code')
+    if (normalized.length < 3) {
+      toast.error('Masukkan kode room dari panitia (3-6 karakter)')
       return
     }
     navigate(`/join/${normalized}${suffix}`)
   }
 
-  const handleStartSession = () => {
-    const newCode = generateRoomCode(6)
-    navigate(`/join/${newCode}${suffix}`)
-  }
-
   return (
-    <div className="min-h-screen">
-      <div className="container mx-auto px-4 py-8 md:py-16">
-        <div className="flex flex-col items-center text-center text-white/90">
-          <div className="mb-8">
-            <h1 className="mb-4 text-4xl font-bold sm:text-5xl md:text-6xl">
-              QuizButton.app
-            </h1>
-            <p className="mb-2 text-xl sm:text-2xl">
-              The Digital Quiz Buzzer That Shows Who&apos;s First
-            </p>
-            <p className="text-base opacity-90 sm:text-lg">
-              Create a room, share the code, and see who has the fastest reflexes!
-            </p>
-          </div>
+    <div className="classmeet-theme min-h-screen bg-[#ffffff] text-[#0b1437]">
+      <div className="mx-auto flex max-w-4xl flex-col items-center px-4 py-10 text-center md:py-16">
+        {/* ISSC Logo */}
+        <img
+          src="/logo-issc.png"
+          alt="Logo ISSC"
+          className="mb-5 h-24 w-auto object-contain sm:h-28"
+        />
 
-          <div className="mb-12 flex w-full max-w-md flex-col gap-6">
-            <form onSubmit={handleJoinSubmit} className="flex gap-2">
+        <p className="text-[13px] font-semibold uppercase tracking-[0.12em] text-[#2a55d6]">
+          Buzzer Kuis Cepat-Cepatan
+        </p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight text-[#0b1437] sm:text-5xl">
+          Siap Jadi yang Tercepat?
+        </h1>
+        <p className="mt-3 max-w-xl text-base text-[#434d7e] sm:text-lg">
+          Masukkan kode room yang tampil di layar proyektor untuk bergabung ke sesi kuis.
+        </p>
+
+        {/* Join Room Card (Participant Only) */}
+        <section className="mt-8 w-full max-w-md rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-6 shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]">
+          <form onSubmit={handleJoinSubmit} className="space-y-4">
+            <div className="text-left">
+              <label
+                htmlFor="home-room-code"
+                className="mb-1.5 block text-sm font-semibold text-[#0b1437]"
+              >
+                Kode Room
+              </label>
               <input
+                id="home-room-code"
                 type="text"
                 value={roomCode}
                 onChange={(e) => setRoomCode(normalizeRoomCode(e.target.value))}
                 maxLength={6}
-                placeholder="Enter room code"
-                aria-label="Room code"
+                placeholder="Masukkan kode 6 karakter"
+                aria-label="Kode Room"
                 autoComplete="off"
-                className="flex h-9 w-full min-w-0 flex-1 rounded-md border border-white/90 bg-white/20 px-3 py-1 text-center font-mono text-lg text-white placeholder:text-white/90 shadow-xs outline-none transition focus-visible:ring-2 focus-visible:ring-white/60"
+                autoFocus
+                className="tnum h-12 w-full rounded-[8px] border border-[#8e9cd6] bg-[#f3f6ff] px-4 text-center font-mono text-2xl font-bold uppercase tracking-[0.2em] text-[#0b1437] placeholder:font-sans placeholder:text-base placeholder:font-normal placeholder:tracking-normal placeholder:text-[#5c6694]"
               />
-              <button
-                type="submit"
-                className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center rounded-md bg-white/90 px-4 py-2 text-sm font-medium text-purple-600 shadow-xs transition-colors hover:bg-white"
-              >
-                Join Room
-              </button>
-            </form>
-
-            <div className="flex items-center gap-2 text-white">
-              <div className="h-px flex-1 bg-white/30" />
-              <span className="px-3 text-sm font-medium">OR</span>
-              <div className="h-px flex-1 bg-white/30" />
             </div>
 
             <button
-              type="button"
-              onClick={handleStartSession}
-              className="inline-flex h-10 transform cursor-pointer items-center justify-center rounded-md bg-white px-6 py-5 text-lg font-semibold text-purple-600 shadow-lg transition hover:scale-105 hover:bg-gray-100 sm:px-8 sm:py-6 sm:text-xl"
+              type="submit"
+              disabled={roomCode.trim().length < 3}
+              className="inline-flex h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-[8px] bg-[#0d2be3] px-6 text-base font-bold text-[#ffffff] transition-colors hover:bg-[#0a21b4] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Start a Quiz Session
+              Gabung Room
+              <ArrowRight className="h-5 w-5" />
             </button>
+          </form>
+        </section>
+
+        {/* Feature Highlights */}
+        <div className="mt-12 grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="flex flex-col items-center rounded-[10px] border border-[#cbd5f5] bg-[#f3f6ff] p-5">
+            <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-[8px] bg-[#2a5fe6] text-[#ffffff]">
+              <Users className="h-6 w-6" />
+            </span>
+            <h3 className="text-base font-bold text-[#0b1437]">Banyak Peserta</h3>
+            <p className="mt-1 text-xs text-[#434d7e]">
+              Semua tim bergabung serentak dari perangkat masing-masing
+            </p>
           </div>
 
-          <div className="mb-12 grid max-w-3xl grid-cols-1 gap-8 sm:grid-cols-3">
-            <div className="flex flex-col items-center">
-              <Users className="mb-3 h-12 w-12 sm:h-16 sm:w-16" />
-              <h3 className="text-base font-semibold sm:text-lg">Multiple Participants</h3>
-            </div>
-            <div className="flex flex-col items-center">
-              <Zap className="mb-3 h-12 w-12 sm:h-16 sm:w-16" />
-              <h3 className="text-base font-semibold sm:text-lg">Instant Results</h3>
-            </div>
-            <div className="flex flex-col items-center">
-              <Timer className="mb-3 h-12 w-12 sm:h-16 sm:w-16" />
-              <h3 className="text-base font-semibold sm:text-lg">Fair &amp; Transparent</h3>
-            </div>
+          <div className="flex flex-col items-center rounded-[10px] border border-[#cbd5f5] bg-[#f3f6ff] p-5">
+            <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-[8px] bg-[#2a5fe6] text-[#ffffff]">
+              <Zap className="h-6 w-6" />
+            </span>
+            <h3 className="text-base font-bold text-[#0b1437]">Deteksi Instan</h3>
+            <p className="mt-1 text-xs text-[#434d7e]">
+              Server mengunci penekan tercepat secara akurat &amp; real-time
+            </p>
           </div>
 
-          <div className="mt-12 max-w-2xl px-4 sm:mt-16">
-            <h2 className="mb-4 text-2xl font-bold sm:text-3xl">How It Works</h2>
-            <ol className="space-y-3 text-left text-sm sm:text-base">
-              <li className="flex items-start">
-                <span className="mr-2 font-bold">1.</span>
-                <span>Quiz master creates a room and shares the code</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2 font-bold">2.</span>
-                <span>Participants join using the room code on their devices</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2 font-bold">3.</span>
-                <span>When a question is asked, participants press their buzzer</span>
-              </li>
-              <li className="flex items-start">
-                <span className="mr-2 font-bold">4.</span>
-                <span>Everyone instantly sees who buzzed in first - no disputes!</span>
-              </li>
-            </ol>
-
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-4 text-xs font-medium text-white/85">
-              <button
-                type="button"
-                onClick={() => {
-                  const target = normalizeRoomCode(roomCode)
-                  const code = target.length >= 3 ? target : generateRoomCode(6)
-                  navigate(`/host/${code}`)
-                }}
-                className="cursor-pointer underline decoration-white/40 underline-offset-4 transition hover:text-white"
-              >
-                Open Host &amp; Question Control
-              </button>
-              <span className="text-white/50">•</span>
-              <button
-                type="button"
-                onClick={() => {
-                  const target = normalizeRoomCode(roomCode)
-                  const code = target.length >= 3 ? target : generateRoomCode(6)
-                  navigate(`/display/${code}`)
-                }}
-                className="cursor-pointer underline decoration-white/40 underline-offset-4 transition hover:text-white"
-              >
-                Open Question Display
-              </button>
-              <span className="text-white/50">•</span>
-              <Link
-                to="/embed-demo"
-                className="underline decoration-white/40 underline-offset-4 transition hover:text-white"
-              >
-                Developer Embed &amp; Event API Demo
-              </Link>
-            </div>
+          <div className="flex flex-col items-center rounded-[10px] border border-[#cbd5f5] bg-[#f3f6ff] p-5">
+            <span className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-[8px] bg-[#2a5fe6] text-[#ffffff]">
+              <Timer className="h-6 w-6" />
+            </span>
+            <h3 className="text-base font-bold text-[#0b1437]">Adil &amp; Transparan</h3>
+            <p className="mt-1 text-xs text-[#434d7e]">
+              Nama penekan pertama &amp; papan skor tampil langsung di layar utama
+            </p>
           </div>
         </div>
+
+        {/* How It Works */}
+        <section className="mt-10 w-full max-w-2xl rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-6 text-left shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]">
+          <h2 className="mb-4 text-center text-xl font-bold text-[#0b1437]">Cara Bermain</h2>
+          <ol className="space-y-3 text-sm text-[#434d7e] sm:text-base">
+            <li className="flex items-start gap-3">
+              <span className="tnum inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#eaf0ff] text-xs font-bold text-[#0d2be3]">
+                1
+              </span>
+              <span>Masukkan kode room yang ditampilkan panitia di layar proyektor</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="tnum inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#eaf0ff] text-xs font-bold text-[#0d2be3]">
+                2
+              </span>
+              <span>Isi nama tim/peserta dan pilih warna identitasmu</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="tnum inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#eaf0ff] text-xs font-bold text-[#0d2be3]">
+                3
+              </span>
+              <span>Saat soal tampil di layar, tekan tombol PRESS secepat mungkin</span>
+            </li>
+            <li className="flex items-start gap-3">
+              <span className="tnum inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#eaf0ff] text-xs font-bold text-[#0d2be3]">
+                4
+              </span>
+              <span>Sebutkan pilihan jawaban (A / B / C / D) kepada Host!</span>
+            </li>
+          </ol>
+        </section>
       </div>
     </div>
   )

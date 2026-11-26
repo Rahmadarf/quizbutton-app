@@ -216,83 +216,98 @@ export function RoomPage() {
         : "Press the button to change everyone's screen color!"
 
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-purple-600 to-blue-600">
-      <header className="bg-white/90 shadow-md backdrop-blur-sm">
-        <div className="container mx-auto px-4 py-4">
+    <div
+      className="classmeet-theme flex min-h-screen flex-col"
+      style={{ background: 'linear-gradient(167deg, #2a5fe6 14.6%, #0d2be3 85.4%)' }}
+    >
+      <header className="border-b border-[#cbd5f5] bg-[#ffffff] shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]">
+        <div className="container mx-auto px-4 py-3.5">
           {/* Desktop header */}
           <div className="hidden items-center justify-between md:flex">
             <div className="flex items-center gap-4">
+              <img
+                src="/logo-issc.png"
+                alt="Logo ISSC"
+                className="h-8 w-auto object-contain"
+              />
               <button
                 type="button"
                 onClick={handleCopyCode}
-                title="Click to copy room code"
-                className="h-auto cursor-pointer p-0 text-2xl font-bold text-foreground transition-opacity hover:opacity-80"
+                title="Klik untuk salin kode room"
+                className="tnum h-auto cursor-pointer p-0 font-mono text-2xl font-bold text-[#0d2be3] transition-opacity hover:opacity-80"
               >
                 Room: {roomId}
               </button>
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs transition-colors hover:bg-gray-100"
+                className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] px-3 text-sm font-semibold text-[#2a55d6] transition-colors hover:bg-[#eaf0ff]"
               >
                 <Copy className="h-4 w-4" />
-                Copy Link
+                Salin Link
               </button>
             </div>
 
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-5">
               <button
                 type="button"
                 onClick={() => navigate(`/join/${roomId}${preservedQuery}`)}
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-gray-100"
+                className="flex cursor-pointer items-center gap-2 rounded-[8px] px-2.5 py-1.5 text-[#0b1437] transition-colors hover:bg-[#eaf0ff]"
               >
                 <span
-                  className="h-6 w-6 rounded-full border-2 border-gray-300"
+                  className="h-6 w-6 rounded-full border-2 border-[#8e9cd6]"
                   style={{ backgroundColor: player.color }}
                 />
-                <span className="font-medium">{player.name}</span>
+                <span className="font-semibold">{player.name}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleShare}
-                className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs transition-colors hover:bg-gray-100"
+                className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] px-3 text-sm font-semibold text-[#2a55d6] transition-colors hover:bg-[#eaf0ff]"
               >
                 <Share2 className="h-4 w-4" />
-                Share
+                Bagikan
               </button>
             </div>
           </div>
 
           {/* Mobile header */}
           <div className="flex items-center justify-between md:hidden">
-            <button
-              type="button"
-              onClick={handleCopyCode}
-              title="Click to copy room code"
-              className="h-auto cursor-pointer p-0 text-xl font-bold text-foreground"
-            >
-              {roomId}
-            </button>
+            <div className="flex items-center gap-2">
+              <img
+                src="/logo-issc.png"
+                alt="Logo ISSC"
+                className="h-7 w-auto object-contain"
+              />
+              <button
+                type="button"
+                onClick={handleCopyCode}
+                title="Klik untuk salin kode room"
+                className="tnum h-auto cursor-pointer p-0 font-mono text-xl font-bold text-[#0d2be3]"
+              >
+                {roomId}
+              </button>
+            </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => navigate(`/join/${roomId}${preservedQuery}`)}
-                className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-gray-100"
+                className="flex cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1 text-[#0b1437] transition-colors hover:bg-[#eaf0ff]"
               >
                 <span
-                  className="h-5 w-5 rounded-full border-2 border-gray-300"
+                  className="h-5 w-5 rounded-full border-2 border-[#8e9cd6]"
                   style={{ backgroundColor: player.color }}
                 />
-                <span className="text-sm font-medium">{player.name}</span>
+                <span className="text-sm font-semibold">{player.name}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleShare}
-                aria-label="Share room"
-                className="inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-2.5 text-sm font-medium shadow-xs transition-colors hover:bg-gray-100"
+                aria-label="Bagikan room"
+                className="inline-flex h-8 cursor-pointer items-center justify-center rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] px-2.5 text-sm font-semibold text-[#2a55d6] transition-colors hover:bg-[#eaf0ff]"
               >
                 <Share2 className="h-4 w-4" />
               </button>
@@ -306,14 +321,14 @@ export function RoomPage() {
           type="button"
           onClick={handlePress}
           disabled={pressDisabled}
-          className="h-64 w-64 transform cursor-pointer select-none rounded-full bg-white text-6xl font-bold text-purple-600 shadow-2xl transition hover:scale-105 hover:bg-gray-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100"
+          className="h-64 w-64 transform cursor-pointer select-none rounded-full bg-[#ffffff] text-6xl font-bold text-[#0d2be3] shadow-[0_8px_32px_rgba(13,43,227,0.35)] transition hover:scale-105 hover:bg-[#eaf0ff] active:scale-95 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100"
         >
           {gateClosed || questionResolved || sessionFinished ? 'WAIT' : 'PRESS'}
         </button>
       </div>
 
-      <div className="bg-white/90 p-4 text-center backdrop-blur-sm">
-        <p className="text-sm text-gray-600">{bottomText}</p>
+      <div className="border-t border-[#cbd5f5] bg-[#ffffff] p-4 text-center">
+        <p className="text-sm font-medium text-[#434d7e]">{bottomText}</p>
       </div>
 
       {overlayBuzz && (
