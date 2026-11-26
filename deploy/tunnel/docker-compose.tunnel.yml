@@ -1,0 +1,18 @@
+# Cloudflare Tunnel untuk QuizButton (butuh internet).
+# cloudflared membuka sambungan KELUAR ke Cloudflare (tanpa port masuk, tanpa pengaturan router/firewall),
+# dan Cloudflare memegang sertifikat HTTPS publik (sekaligus otomatis mendukung WebSocket wss://).
+#
+# Daftar hostname & tujuannya diatur di dasbor Cloudflare Zero Trust > Networks > Tunnels > Public Hostname:
+#   - Mode laptop (`npm start`)      : quiz.<domain> -> http://host.docker.internal:3001
+#   - Mode laptop (`npm run dev`)    : quiz.<domain> -> http://host.docker.internal:5173
+#   - Mode kontainer (`--server`)    : quiz.<domain> -> http://quizbutton-app:3001
+services:
+  cloudflared:
+    container_name: quizbutton-cloudflared
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?isi TUNNEL_TOKEN di deploy/tunnel/.env (lihat deploy/tunnel/README.md)}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

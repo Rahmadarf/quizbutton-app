@@ -1,0 +1,18 @@
+# Aplikasi QuizButton sebagai kontainer, dipakai BERSAMA docker-compose.tunnel.yml:
+#   ./10-up.sh --server
+# Jalan di port 3001 (atau APP_PORT di deploy/tunnel/.env), dan tunnel meneruskan
+# quiz.<domain> ke kontainer ini (route Cloudflare: http://quizbutton-app:3001).
+services:
+  app:
+    container_name: quizbutton-app
+    image: quizbutton-app:local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOST: "0.0.0.0"
+    ports:
+      - "${APP_PORT:-3001}:3001"
