@@ -265,6 +265,26 @@ export class RoomManager {
     }
   }
 
+  public deleteRoom(roomId: string): boolean {
+    const room = this.rooms.get(roomId)
+    if (!room) return false
+
+    if (room.resetTimer) {
+      clearTimeout(room.resetTimer)
+      room.resetTimer = null
+    }
+
+    this.broadcast(room, {
+      type: 'room_deleted',
+      roomId,
+      message: 'Room telah dihapus oleh Admin.',
+    })
+
+    room.subscribers.clear()
+    this.rooms.delete(roomId)
+    return true
+  }
+
   public getSnapshot(roomId: string): RoomSnapshot {
     const room = this.rooms.get(roomId)
     const now = Date.now()
