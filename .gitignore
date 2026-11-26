@@ -6,5 +6,6 @@ data
 .env
 .env.local
 deploy/tunnel/.env
+.vscode/sftp.json
 *.log
 .DS_Store
