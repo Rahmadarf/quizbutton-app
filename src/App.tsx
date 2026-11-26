@@ -3,8 +3,10 @@ import { useEffect } from 'react'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { emitBridgeEvent, isEmbedLayout, isInIframe } from './lib/embedBridge'
+import { DisplayPage } from './pages/DisplayPage'
 import { EmbedDemoPage } from './pages/EmbedDemoPage'
 import { HomePage } from './pages/HomePage'
+import { HostPage } from './pages/HostPage'
 import { JoinPage } from './pages/JoinPage'
 import { RoomPage } from './pages/RoomPage'
 import { TermsPage } from './pages/TermsPage'
@@ -20,8 +22,11 @@ const queryClient = new QueryClient({
 function AppShell() {
   const location = useLocation()
   const embedded = isEmbedLayout(location.search)
-  const isEmbedDemo = location.pathname === '/embed-demo'
-  const showFooter = !embedded && !isEmbedDemo
+  const isStandaloneScreen =
+    location.pathname === '/embed-demo' ||
+    location.pathname.startsWith('/display/') ||
+    location.pathname.startsWith('/host/')
+  const showFooter = !embedded && !isStandaloneScreen
 
   useEffect(() => {
     emitBridgeEvent({
@@ -38,6 +43,8 @@ function AppShell() {
           <Route path="/" element={<HomePage />} />
           <Route path="/join/:roomId" element={<JoinPage />} />
           <Route path="/room/:roomId" element={<RoomPage />} />
+          <Route path="/display/:roomId" element={<DisplayPage />} />
+          <Route path="/host/:roomId" element={<HostPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/embed-demo" element={<EmbedDemoPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

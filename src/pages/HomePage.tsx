@@ -113,10 +113,34 @@ export function HomePage() {
               </li>
             </ol>
 
-            <div className="mt-10">
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-4 text-xs font-medium text-white/85">
+              <button
+                type="button"
+                onClick={() => {
+                  const target = normalizeRoomCode(roomCode)
+                  const code = target.length >= 3 ? target : generateRoomCode(6)
+                  navigate(`/host/${code}`)
+                }}
+                className="cursor-pointer underline decoration-white/40 underline-offset-4 transition hover:text-white"
+              >
+                Open Host &amp; Question Control
+              </button>
+              <span className="text-white/50">•</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = normalizeRoomCode(roomCode)
+                  const code = target.length >= 3 ? target : generateRoomCode(6)
+                  navigate(`/display/${code}`)
+                }}
+                className="cursor-pointer underline decoration-white/40 underline-offset-4 transition hover:text-white"
+              >
+                Open Question Display
+              </button>
+              <span className="text-white/50">•</span>
               <Link
                 to="/embed-demo"
-                className="text-xs font-medium text-white/75 underline decoration-white/40 underline-offset-4 transition hover:text-white"
+                className="underline decoration-white/40 underline-offset-4 transition hover:text-white"
               >
                 Developer Embed &amp; Event API Demo
               </Link>
