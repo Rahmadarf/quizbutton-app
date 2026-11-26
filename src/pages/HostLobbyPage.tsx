@@ -1,6 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowRight, Database, ExternalLink, Monitor, Plus, Radio, Users } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import {
+  ArrowRight,
+  Database,
+  ExternalLink,
+  Lock,
+  Monitor,
+  Plus,
+  Radio,
+  Users,
+  X,
+} from 'lucide-react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useQuestionBank } from '../hooks/useQuestionBank'
@@ -24,11 +34,14 @@ async function fetchRooms(): Promise<ActiveRoomSummary[]> {
   return data.rooms ?? []
 }
 
-async function createRoomApi(roomId?: string): Promise<{ roomId: string }> {
+async function createRoomApi(payload: {
+  roomId?: string
+  passcode: string
+}): Promise<{ roomId: string }> {
   const res = await fetch('/api/rooms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(roomId ? { roomId } : {}),
+    body: JSON.stringify(payload),
   })
   const data = (await res.json().catch(() => ({}))) as { roomId?: string; error?: string }
   if (!res.ok || !data.roomId) {
@@ -42,6 +55,12 @@ export function HostLobbyPage() {
   const queryClient = useQueryClient()
   const [customCode, setCustomCode] = useState('')
 
+  // Passcode confirmation modal state (always cleared so admin must enter passcode every time)
+  const [passcodeModalOpen, setPasscodeModalOpen] = useState(false)
+  const [pendingRoomId, setPendingRoomId] = useState<string | undefined>(undefined)
+  const [passcode, setPasscode] = useState('')
+  const [passcodeError, setPasscodeError] = useState<string | null>(null)
+
   const roomsQuery = useQuery({
     queryKey: ['active-rooms'],
     queryFn: fetchRooms,
@@ -51,15 +70,43 @@ export function HostLobbyPage() {
   const { bankQuery } = useQuestionBank()
   const bank = bankQuery.data
 
+  const closePasscodeModal = () => {
+    setPasscodeModalOpen(false)
+    setPendingRoomId(undefined)
+    setPasscode('')
+    setPasscodeError(null)
+  }
+
+  const openPasscodeModal = (roomId?: string) => {
+    setPendingRoomId(roomId)
+    setPasscode('')
+    setPasscodeError(null)
+    setPasscodeModalOpen(true)
+  }
+
+  useEffect(() => {
+    if (!passcodeModalOpen) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closePasscodeModal()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [passcodeModalOpen])
+
   const createRoomMutation = useMutation({
-    mutationFn: (roomId?: string) => createRoomApi(roomId),
+    mutationFn: (payload: { roomId?: string; passcode: string }) => createRoomApi(payload),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['active-rooms'] })
+      closePasscodeModal()
       toast.success(`Room ${data.roomId} siap digunakan!`)
       navigate(`/host/${data.roomId}`)
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Gagal membuat room')
+      const msg = err instanceof Error ? err.message : 'Passcode salah'
+      setPasscodeError(msg)
+      setPasscode('')
     },
   })
 
@@ -70,7 +117,20 @@ export function HostLobbyPage() {
       toast.error('Masukkan minimal 3 karakter kode room (maks. 6 karakter)')
       return
     }
-    createRoomMutation.mutate(normalized)
+    openPasscodeModal(normalized)
+  }
+
+  const handlePasscodeSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    if (!passcode.trim()) {
+      setPasscodeError('Masukkan passcode admin terlebih dahulu.')
+      return
+    }
+    setPasscodeError(null)
+    createRoomMutation.mutate({
+      roomId: pendingRoomId,
+      passcode: passcode.trim(),
+    })
   }
 
   const rooms = roomsQuery.data ?? []
@@ -138,24 +198,25 @@ export function HostLobbyPage() {
 
             <button
               type="button"
-              onClick={() => createRoomMutation.mutate(undefined)}
-              disabled={createRoomMutation.isPending}
-              className="inline-flex h-12 shrink-0 cursor-pointer items-center gap-2 rounded-[8px] bg-[#ffffff] px-6 text-base font-bold text-[#0d2be3] shadow-[0_8px_32px_rgba(13,43,227,0.16)] transition hover:bg-[#eaf0ff] disabled:opacity-60"
+              onClick={() => openPasscodeModal(undefined)}
+              className="inline-flex h-12 shrink-0 cursor-pointer items-center gap-2 rounded-[8px] bg-[#ffffff] px-6 text-base font-bold text-[#0d2be3] shadow-[0_8px_32px_rgba(13,43,227,0.16)] transition hover:bg-[#eaf0ff]"
             >
               <Plus className="h-5 w-5" />
-              {createRoomMutation.isPending ? 'Membuat Room...' : 'Buat Room Baru'}
+              Buat Room Baru
             </button>
           </div>
         </section>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Custom Code / Rejoin Card */}
+          {/* Custom Code / Create Card */}
           <section className="rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-5 shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)] lg:col-span-5">
             <h3 className="text-base font-bold text-[#0b1437]">
-              Buat dengan Kode Khusus / Masuk Room
+              Buat Room dengan Kode Khusus
             </h3>
             <p className="mt-1 text-sm text-[#434d7e]">
-              Ingin kode room yang mudah diingat (mis. <code className="font-mono font-bold text-[#0d2be3]">ISSC01</code>) atau ingin masuk lagi ke room yang sudah ada?
+              Ingin kode room yang mudah diingat (mis.{' '}
+              <code className="font-mono font-bold text-[#0d2be3]">ISSC01</code>)? Memerlukan
+              passcode admin setiap pembuatan room.
             </p>
 
             <form onSubmit={handleCustomSubmit} className="mt-4 flex gap-2">
@@ -170,10 +231,10 @@ export function HostLobbyPage() {
               />
               <button
                 type="submit"
-                disabled={createRoomMutation.isPending || customCode.trim().length < 3}
+                disabled={customCode.trim().length < 3}
                 className="inline-flex h-10 cursor-pointer items-center gap-1.5 rounded-[8px] bg-[#0d2be3] px-4 text-sm font-semibold text-[#ffffff] hover:bg-[#0a21b4] disabled:cursor-not-allowed disabled:opacity-45"
               >
-                Buka
+                Buat
                 <ArrowRight className="h-4 w-4" />
               </button>
             </form>
@@ -215,7 +276,7 @@ export function HostLobbyPage() {
                             ? 'bg-[#dff8ef] text-[#09704a]'
                             : room.status === 'finished'
                               ? 'bg-[#eaf0ff] text-[#2a55d6]'
-                              : 'bg-[#ffffff] text-[#434d7e] border border-[#cbd5f5]'
+                              : 'border border-[#cbd5f5] bg-[#ffffff] text-[#434d7e]'
                         }`}
                       >
                         {room.status === 'active'
@@ -256,6 +317,99 @@ export function HostLobbyPage() {
           </section>
         </div>
       </main>
+
+      {/* Passcode Verification Modal (Classmeet blue translucent overlay, never black) */}
+      {passcodeModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="passcode-dialog-title"
+          style={{ backgroundColor: 'rgba(10, 33, 180, 0.55)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closePasscodeModal()
+          }}
+        >
+          <div className="w-full max-w-sm rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-6 shadow-[0_8px_32px_rgba(13,43,227,0.16)]">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[#eaf0ff] text-[#0d2be3]">
+                  <Lock className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 id="passcode-dialog-title" className="text-lg font-bold text-[#0b1437]">
+                    Verifikasi Passcode Admin
+                  </h2>
+                  <p className="text-xs text-[#434d7e]">
+                    {pendingRoomId
+                      ? `Membuat room kode ${pendingRoomId}`
+                      : 'Membuat room baru dengan kode acak'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closePasscodeModal}
+                aria-label="Tutup dialog"
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-[8px] text-[#5c6694] hover:bg-[#eaf0ff] hover:text-[#0b1437]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handlePasscodeSubmit} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="admin-passcode"
+                  className="mb-1.5 block text-sm font-semibold text-[#0b1437]"
+                >
+                  Passcode Admin
+                </label>
+                <input
+                  id="admin-passcode"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  autoFocus
+                  value={passcode}
+                  onChange={(e) => {
+                    setPasscode(e.target.value)
+                    if (passcodeError) setPasscodeError(null)
+                  }}
+                  placeholder="Masukkan passcode"
+                  className="tnum h-11 w-full rounded-[8px] border border-[#8e9cd6] bg-[#f3f6ff] px-3 text-center font-mono text-xl font-bold tracking-[0.25em] text-[#0b1437] placeholder:font-sans placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#5c6694]"
+                />
+              </div>
+
+              {passcodeError && (
+                <p
+                  role="alert"
+                  className="rounded-[8px] bg-[#fee8e8] px-3 py-2 text-xs font-semibold text-[#c0262d]"
+                >
+                  {passcodeError}
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={closePasscodeModal}
+                  className="h-10 flex-1 cursor-pointer rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] text-sm font-semibold text-[#434d7e] hover:bg-[#eaf0ff]"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={createRoomMutation.isPending || !passcode.trim()}
+                  className="h-10 flex-1 cursor-pointer rounded-[8px] bg-[#0d2be3] text-sm font-bold text-[#ffffff] hover:bg-[#0a21b4] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {createRoomMutation.isPending ? 'Memverifikasi...' : 'Buat Room'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

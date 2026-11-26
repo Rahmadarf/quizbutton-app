@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +13,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT) || 3001
 const HOST = process.env.HOST || '0.0.0.0'
 const IS_PROD = process.env.NODE_ENV === 'production'
+const HOST_CREATE_PASSCODE = process.env.HOST_PASSCODE || '223332'
+
+function isValidHostPasscode(input: string): boolean {
+  const a = Buffer.from(input.trim(), 'utf8')
+  const b = Buffer.from(HOST_CREATE_PASSCODE, 'utf8')
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
 
 const app = express()
 const questionBank = new QuestionBankStore()
@@ -92,6 +101,12 @@ app.get('/api/rooms', (_req, res) => {
 })
 
 app.post('/api/rooms', (req, res) => {
+  const passcode = typeof req.body?.passcode === 'string' ? req.body.passcode : ''
+  if (!isValidHostPasscode(passcode)) {
+    res.status(403).json({ error: 'Passcode admin salah. Masukkan passcode yang benar untuk membuat room.' })
+    return
+  }
+
   const rawRoomId = typeof req.body?.roomId === 'string' ? req.body.roomId : undefined
   if (rawRoomId && !normalizeRoomId(rawRoomId)) {
     res.status(400).json({ error: 'Kode room harus 3-12 karakter huruf/angka.' })
