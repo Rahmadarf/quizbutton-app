@@ -1,0 +1,46 @@
+{
+  "name": "quizbutton-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "npm run tunnel:up || echo '[dev] Cloudflare tunnel gagal jalan (lihat galat di atas); dev server tetap dilanjutkan.'",
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "vite",
+    "build": "tsc -b && vite build && tsc -p tsconfig.server.json",
+    "start": "bash scripts/start-with-tunnel.sh",
+    "start:app": "NODE_ENV=production node dist-server/index.js",
+    "tunnel:up": "bash deploy/tunnel/10-up.sh --tunnel",
+    "tunnel:down": "bash deploy/tunnel/10-up.sh down",
+    "tunnel:logs": "bash deploy/tunnel/10-up.sh logs",
+    "tunnel:server": "bash deploy/tunnel/10-up.sh --server",
+    "typecheck": "tsc -b --noEmit && tsc -p tsconfig.server.json --noEmit"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.76.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "lucide-react": "^0.525.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.0",
+    "sonner": "^2.0.3",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.4",
+    "@types/react-dom": "^19.1.5",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "^4.5.0",
+    "concurrently": "^9.1.2",
+    "tailwindcss": "^4.1.11",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

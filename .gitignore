@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-server
+*.tsbuildinfo
+.env
+.env.local
+deploy/tunnel/.env
+*.log
+.DS_Store
