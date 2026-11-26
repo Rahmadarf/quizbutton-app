@@ -21,6 +21,7 @@ import {
   Trophy,
   Unlock,
   Upload,
+  X,
   XCircle,
   Zap,
 } from 'lucide-react'
@@ -34,6 +35,13 @@ import {
   parseQuestionsCsv,
   type CsvParseResult,
 } from '../lib/csvQuestions'
+import {
+  clearHostToken,
+  deleteRoomApi,
+  getHostToken,
+  setHostToken,
+  verifyHostPasscode,
+} from '../lib/hostAuth'
 import { normalizeRoomCode } from '../lib/playerStorage'
 import {
   OPTION_KEYS,
@@ -65,6 +73,20 @@ export function HostPage() {
   const navigate = useNavigate()
   const roomId = normalizeRoomCode(rawRoomId)
 
+  // Host session token (verified via passcode; if missing on direct URL access, show passcode gate)
+  const [hostToken, setHostTokenState] = useState<string | null>(() =>
+    roomId ? getHostToken(roomId) : null,
+  )
+  const [gatePasscode, setGatePasscode] = useState('')
+  const [gateError, setGateError] = useState<string | null>(null)
+  const [gateSubmitting, setGateSubmitting] = useState(false)
+
+  // Delete Room modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deletePasscode, setDeletePasscode] = useState('')
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
+
   const [activeTab, setActiveTab] = useState<'control' | 'bank'>('control')
   const [form, setForm] = useState<QuestionInput>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -80,14 +102,27 @@ export function HostPage() {
 
   useEffect(() => {
     if (!roomId || roomId.length < 3) {
-      navigate('/', { replace: true })
+      navigate('/host', { replace: true })
+      return
     }
+    setHostTokenState(getHostToken(roomId))
   }, [navigate, roomId])
 
   const { roomQuery, connectionStatus, hostActions } = useRoomRealtime<HostRoomSnapshot>({
     roomId,
     role: 'host',
-    enabled: Boolean(roomId),
+    hostToken,
+    enabled: Boolean(roomId && hostToken),
+    onRoomDeleted: (message) => {
+      clearHostToken(roomId)
+      toast.info(message || 'Room telah dihapus oleh Admin.')
+      navigate('/host', { replace: true })
+    },
+    onHostUnauthorized: () => {
+      clearHostToken(roomId)
+      setHostTokenState(null)
+      setGateError('Sesi admin berakhir. Masukkan passcode admin untuk melanjutkan.')
+    },
   })
 
   const {
@@ -98,7 +133,7 @@ export function HostPage() {
     importQuestionsMutation,
     seedSampleMutation,
     resetUsedMutation,
-  } = useQuestionBank()
+  } = useQuestionBank(hostToken)
 
   const snapshot = roomQuery.data
   const session = snapshot?.session
@@ -122,6 +157,126 @@ export function HostPage() {
   }, [activeBuzz, hostActions.resetBuzzMutation])
 
   if (!roomId) return null
+
+  const handleGateSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!gatePasscode.trim()) {
+      setGateError('Masukkan passcode admin terlebih dahulu.')
+      return
+    }
+    setGateSubmitting(true)
+    setGateError(null)
+    try {
+      const token = await verifyHostPasscode(gatePasscode.trim())
+      setHostToken(roomId, token)
+      setHostTokenState(token)
+      setGatePasscode('')
+    } catch (err) {
+      setGateError(err instanceof Error ? err.message : 'Passcode admin salah.')
+      setGatePasscode('')
+    } finally {
+      setGateSubmitting(false)
+    }
+  }
+
+  const handleConfirmDeleteRoom = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!deletePasscode.trim()) {
+      setDeleteError('Masukkan passcode admin terlebih dahulu.')
+      return
+    }
+    setDeleteSubmitting(true)
+    setDeleteError(null)
+    try {
+      await deleteRoomApi(roomId, deletePasscode.trim())
+      clearHostToken(roomId)
+      setDeleteModalOpen(false)
+      setDeletePasscode('')
+      toast.success(`Room ${roomId} berhasil dihapus.`)
+      navigate('/host', { replace: true })
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Passcode admin salah.')
+      setDeletePasscode('')
+    } finally {
+      setDeleteSubmitting(false)
+    }
+  }
+
+  // Passcode gate for direct access to /host/:roomId without verified hostToken
+  if (!hostToken) {
+    return (
+      <div className="classmeet-theme flex min-h-screen flex-col items-center justify-center bg-[#ffffff] px-4 py-8 text-[#0b1437]">
+        <div className="w-full max-w-sm rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-6 shadow-[0_8px_32px_rgba(13,43,227,0.16)]">
+          <div className="mb-5 flex flex-col items-center text-center">
+            <img
+              src="/logo-issc.png"
+              alt="Logo ISSC"
+              className="mb-4 h-16 w-auto object-contain"
+            />
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[8px] bg-[#eaf0ff] text-[#0d2be3]">
+              <Lock className="h-5 w-5" />
+            </span>
+            <h1 className="mt-3 text-xl font-bold text-[#0b1437]">Verifikasi Passcode Admin</h1>
+            <p className="mt-1 text-sm text-[#434d7e]">
+              Masukkan passcode untuk masuk ke Panel Host Room{' '}
+              <span className="font-mono font-bold text-[#0d2be3]">{roomId}</span>
+            </p>
+          </div>
+
+          <form onSubmit={handleGateSubmit} className="space-y-4">
+            <div>
+              <label
+                htmlFor="host-gate-passcode"
+                className="mb-1.5 block text-sm font-semibold text-[#0b1437]"
+              >
+                Passcode Admin
+              </label>
+              <input
+                id="host-gate-passcode"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                autoFocus
+                value={gatePasscode}
+                onChange={(e) => {
+                  setGatePasscode(e.target.value)
+                  if (gateError) setGateError(null)
+                }}
+                placeholder="Masukkan passcode"
+                className="tnum h-11 w-full rounded-[8px] border border-[#8e9cd6] bg-[#f3f6ff] px-3 text-center font-mono text-xl font-bold tracking-[0.25em] text-[#0b1437] placeholder:font-sans placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#5c6694]"
+              />
+            </div>
+
+            {gateError && (
+              <p
+                role="alert"
+                className="rounded-[8px] bg-[#fee8e8] px-3 py-2 text-xs font-semibold text-[#c0262d]"
+              >
+                {gateError}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => navigate('/host')}
+                className="h-10 flex-1 cursor-pointer rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] text-sm font-semibold text-[#434d7e] hover:bg-[#eaf0ff]"
+              >
+                Kembali
+              </button>
+              <button
+                type="submit"
+                disabled={gateSubmitting || !gatePasscode.trim()}
+                className="h-10 flex-1 cursor-pointer rounded-[8px] bg-[#0d2be3] text-sm font-bold text-[#ffffff] hover:bg-[#0a21b4] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {gateSubmitting ? 'Memverifikasi...' : 'Masuk Host'}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
   const joinUrl = `${window.location.origin}/join/${roomId}`
   const displayUrl = `/display/${roomId}`
@@ -365,6 +520,19 @@ export function HostPage() {
               <ExternalLink className="h-4 w-4" />
               Buka Layar Display
             </a>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDeletePasscode('')
+                setDeleteError(null)
+                setDeleteModalOpen(true)
+              }}
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[8px] border border-[#c0262d] bg-[#ffffff] px-3 text-sm font-semibold text-[#c0262d] hover:bg-[#fee8e8]"
+            >
+              <Trash2 className="h-4 w-4" />
+              Hapus Room
+            </button>
           </div>
         </div>
       </header>
@@ -1296,6 +1464,113 @@ export function HostPage() {
           </div>
         )}
       </main>
+
+      {/* Delete Room Confirmation Modal */}
+      {deleteModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-room-dialog-title"
+          style={{ backgroundColor: 'rgba(10, 33, 180, 0.55)' }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setDeleteModalOpen(false)
+              setDeletePasscode('')
+              setDeleteError(null)
+            }
+          }}
+        >
+          <div className="w-full max-w-sm rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-6 shadow-[0_8px_32px_rgba(13,43,227,0.16)]">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[#fee8e8] text-[#c0262d]">
+                  <Trash2 className="h-5 w-5" />
+                </span>
+                <div>
+                  <h2 id="delete-room-dialog-title" className="text-lg font-bold text-[#0b1437]">
+                    Hapus Room {roomId}
+                  </h2>
+                  <p className="text-xs text-[#434d7e]">
+                    Semua peserta di room ini akan dikeluarkan
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteModalOpen(false)
+                  setDeletePasscode('')
+                  setDeleteError(null)
+                }}
+                aria-label="Tutup dialog"
+                className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-[8px] text-[#5c6694] hover:bg-[#eaf0ff]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mb-4 rounded-[8px] border border-[#c0262d]/30 bg-[#fee8e8] px-3 py-2.5 text-xs font-medium text-[#c0262d]">
+              Masukkan passcode admin untuk menghapus room <strong className="font-mono">{roomId}</strong> secara permanen.
+            </div>
+
+            <form onSubmit={handleConfirmDeleteRoom} className="space-y-4">
+              <div>
+                <label
+                  htmlFor="delete-room-passcode"
+                  className="mb-1.5 block text-sm font-semibold text-[#0b1437]"
+                >
+                  Passcode Admin
+                </label>
+                <input
+                  id="delete-room-passcode"
+                  type="password"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  autoFocus
+                  value={deletePasscode}
+                  onChange={(e) => {
+                    setDeletePasscode(e.target.value)
+                    if (deleteError) setDeleteError(null)
+                  }}
+                  placeholder="Masukkan passcode"
+                  className="tnum h-11 w-full rounded-[8px] border border-[#8e9cd6] bg-[#f3f6ff] px-3 text-center font-mono text-xl font-bold tracking-[0.25em] text-[#0b1437] placeholder:font-sans placeholder:text-sm placeholder:font-normal placeholder:tracking-normal placeholder:text-[#5c6694]"
+                />
+              </div>
+
+              {deleteError && (
+                <p
+                  role="alert"
+                  className="rounded-[8px] bg-[#fee8e8] px-3 py-2 text-xs font-semibold text-[#c0262d]"
+                >
+                  {deleteError}
+                </p>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteModalOpen(false)
+                    setDeletePasscode('')
+                    setDeleteError(null)
+                  }}
+                  className="h-10 flex-1 cursor-pointer rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] text-sm font-semibold text-[#434d7e] hover:bg-[#eaf0ff]"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={deleteSubmitting || !deletePasscode.trim()}
+                  className="h-10 flex-1 cursor-pointer rounded-[8px] bg-[#c0262d] text-sm font-bold text-[#ffffff] hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleteSubmitting ? 'Menghapus...' : 'Hapus Room'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

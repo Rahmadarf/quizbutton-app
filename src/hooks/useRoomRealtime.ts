@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { emitBridgeEvent, emitBuzzBridgeEvent } from '../lib/embedBridge'
+import { getHostAuthHeaders } from '../lib/hostAuth'
 import type {
   BuzzEvent,
   BuzzerMode,
@@ -18,35 +19,62 @@ export function roomQueryKey(roomId: string, role: RealtimeRole = 'player') {
   return ['room', roomId, role === 'host' ? 'host' : 'public'] as const
 }
 
+class UnauthorizedHostError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'UnauthorizedHostError'
+  }
+}
+
 async function fetchRoomSnapshot<T extends RoomSnapshot | HostRoomSnapshot>(
   roomId: string,
   role: RealtimeRole,
+  hostToken?: string | null,
 ): Promise<T> {
   const qs = role === 'host' ? '?role=host' : ''
-  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}${qs}`)
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}${qs}`, {
+    headers: role === 'host' ? getHostAuthHeaders(hostToken) : undefined,
+  })
+  if (res.status === 401) {
+    throw new UnauthorizedHostError('Sesi admin berakhir. Masukkan passcode admin.')
+  }
   if (!res.ok) {
     throw new Error('Failed to load room state')
   }
   return (await res.json()) as T
 }
 
-function buildWsUrl(roomId: string, role: RealtimeRole, player?: PlayerProfile | null): string {
+function buildWsUrl(
+  roomId: string,
+  role: RealtimeRole,
+  player?: PlayerProfile | null,
+  hostToken?: string | null,
+): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const params = new URLSearchParams({ room: roomId, role })
   if (role === 'player' && player) {
     params.set('playerName', player.name)
     params.set('color', player.color)
   }
+  if (role === 'host' && hostToken) {
+    params.set('token', hostToken)
+  }
   return `${protocol}//${window.location.host}/ws?${params.toString()}`
 }
 
-async function postJson<T>(url: string, body?: unknown): Promise<T> {
+async function postJson<T>(url: string, body?: unknown, hostToken?: string | null): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getHostAuthHeaders(hostToken),
+    },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   })
   const data = (await res.json().catch(() => ({}))) as { error?: string } & T
+  if (res.status === 401) {
+    throw new UnauthorizedHostError(data.error || 'Sesi admin berakhir. Masukkan passcode admin.')
+  }
   if (!res.ok) {
     throw new Error(data.error || 'Request failed')
   }
@@ -57,44 +85,62 @@ interface UseRoomRealtimeOptions {
   roomId: string
   role?: RealtimeRole
   player?: PlayerProfile | null
+  hostToken?: string | null
   enabled: boolean
   onBuzz?: (event: BuzzEvent) => void
   onReset?: (roomId: string, serverTimestamp: number) => void
   onBuzzRejected?: (reason: string, message?: string) => void
+  onRoomDeleted?: (message: string) => void
+  onHostUnauthorized?: () => void
 }
 
 export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapshot = RoomSnapshot>({
   roomId,
   role = 'player',
   player = null,
+  hostToken = null,
   enabled,
   onBuzz,
   onReset,
   onBuzzRejected,
+  onRoomDeleted,
+  onHostUnauthorized,
 }: UseRoomRealtimeOptions) {
   const queryClient = useQueryClient()
   const wsRef = useRef<WebSocket | null>(null)
   const onBuzzRef = useRef(onBuzz)
   const onResetRef = useRef(onReset)
   const onRejectedRef = useRef(onBuzzRejected)
+  const onRoomDeletedRef = useRef(onRoomDeleted)
+  const onUnauthorizedRef = useRef(onHostUnauthorized)
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting')
 
   onBuzzRef.current = onBuzz
   onResetRef.current = onReset
   onRejectedRef.current = onBuzzRejected
+  onRoomDeletedRef.current = onRoomDeleted
+  onUnauthorizedRef.current = onHostUnauthorized
 
   const queryKey = roomQueryKey(roomId, role)
+  const canConnect = enabled && Boolean(roomId) && (role !== 'host' || Boolean(hostToken))
 
   const roomQuery = useQuery<TSnapshot>({
     queryKey,
-    queryFn: () => fetchRoomSnapshot<TSnapshot>(roomId, role),
-    enabled: enabled && Boolean(roomId),
+    queryFn: () => fetchRoomSnapshot<TSnapshot>(roomId, role, hostToken),
+    enabled: canConnect,
     staleTime: Infinity,
     refetchOnWindowFocus: false,
+    retry: (_count, err) => !(err instanceof UnauthorizedHostError),
   })
 
   useEffect(() => {
-    if (!enabled || !roomId) return
+    if (roomQuery.error instanceof UnauthorizedHostError) {
+      onUnauthorizedRef.current?.()
+    }
+  }, [roomQuery.error])
+
+  useEffect(() => {
+    if (!canConnect) return
 
     let disposed = false
     let reconnectTimer: number | null = null
@@ -105,7 +151,7 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
       if (disposed) return
       setConnectionStatus(reconnectAttempt === 0 ? 'connecting' : 'reconnecting')
 
-      const ws = new WebSocket(buildWsUrl(roomId, role, player))
+      const ws = new WebSocket(buildWsUrl(roomId, role, player, hostToken))
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -127,6 +173,13 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
         try {
           msg = JSON.parse(String(evt.data)) as WsServerMessage
         } catch {
+          return
+        }
+
+        if (msg.type === 'room_deleted') {
+          disposed = true
+          onRoomDeletedRef.current?.(msg.message || 'Room telah dihapus oleh Admin.')
+          ws.close()
           return
         }
 
@@ -210,13 +263,22 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
         }
       }
 
-      ws.onclose = () => {
+      ws.onclose = (closeEvt) => {
         if (pingTimer !== null) {
           window.clearInterval(pingTimer)
           pingTimer = null
         }
         if (wsRef.current === ws) {
           wsRef.current = null
+        }
+        if (closeEvt.code === 4001) {
+          disposed = true
+          onUnauthorizedRef.current?.()
+          return
+        }
+        if (closeEvt.code === 4004) {
+          disposed = true
+          return
         }
         if (!disposed) {
           reconnectAttempt += 1
@@ -242,7 +304,7 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
         wsRef.current = null
       }
     }
-  }, [enabled, player?.color, player?.name, queryClient, role, roomId])
+  }, [canConnect, hostToken, player?.color, player?.name, queryClient, role, roomId])
 
   const buzzMutation = useMutation({
     mutationFn: async ({ playerName, color }: { playerName: string; color: string }) => {
@@ -271,7 +333,13 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
       queryClient.setQueryData(roomQueryKey(roomId, 'host'), snapshot)
     }
     if (bank) {
-      queryClient.setQueryData(BANK_QUERY_KEY, bank)
+      queryClient.setQueryData([...BANK_QUERY_KEY, true], bank)
+    }
+  }
+
+  const handleMutationError = (err: unknown) => {
+    if (err instanceof UnauthorizedHostError) {
+      onUnauthorizedRef.current?.()
     }
   }
 
@@ -280,8 +348,10 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
       postJson<{ snapshot: HostRoomSnapshot; bank: unknown }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/start`,
         opts ?? { count: 10, shuffle: true, resetScores: true },
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot, data.bank),
+    onError: handleMutationError,
   })
 
   const submitAnswerMutation = useMutation({
@@ -289,48 +359,65 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
       postJson<{ ok: true; correct: boolean; snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/answer`,
         { option },
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const revealAnswerMutation = useMutation({
     mutationFn: () =>
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/reveal`,
+        undefined,
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const nextQuestionMutation = useMutation({
     mutationFn: () =>
       postJson<{ snapshot: HostRoomSnapshot; bank: unknown }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/next`,
+        undefined,
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot, data.bank),
+    onError: handleMutationError,
   })
 
   const finishSessionMutation = useMutation({
     mutationFn: () =>
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/finish`,
+        undefined,
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const standbySessionMutation = useMutation({
     mutationFn: () =>
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/standby`,
+        undefined,
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const resetBuzzMutation = useMutation({
     mutationFn: () =>
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/reset-buzz`,
+        undefined,
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const setGateMutation = useMutation({
@@ -338,8 +425,10 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/gate`,
         { open },
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const setModeMutation = useMutation({
@@ -347,8 +436,10 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/mode`,
         { mode },
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const adjustScoreMutation = useMutation({
@@ -356,16 +447,21 @@ export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapsho
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/score`,
         payload,
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   const resetScoresMutation = useMutation({
     mutationFn: () =>
       postJson<{ snapshot: HostRoomSnapshot }>(
         `/api/rooms/${encodeURIComponent(roomId)}/session/reset-scores`,
+        undefined,
+        hostToken,
       ),
     onSuccess: (data) => syncHostSnapshot(data.snapshot),
+    onError: handleMutationError,
   })
 
   return {

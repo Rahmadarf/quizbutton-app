@@ -149,6 +149,10 @@ export function RoomPage() {
         toast.info(message || 'Buzzer sedang dikunci oleh Host')
       }
     },
+    onRoomDeleted: (message) => {
+      toast.info(message || 'Room telah ditutup oleh Host.')
+      navigate(`/${preservedQuery}`, { replace: true })
+    },
   })
 
   if (!player || !roomId) {

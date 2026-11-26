@@ -110,6 +110,7 @@ export function DisplayPage() {
   const navigate = useNavigate()
   const roomId = normalizeRoomCode(rawRoomId)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [deletedMessage, setDeletedMessage] = useState<string | null>(null)
 
   useEffect(() => {
     if (!roomId || roomId.length < 3) {
@@ -128,10 +129,41 @@ export function DisplayPage() {
   const { roomQuery, connectionStatus } = useRoomRealtime<RoomSnapshot>({
     roomId,
     role: 'display',
-    enabled: Boolean(roomId),
+    enabled: Boolean(roomId && !deletedMessage),
+    onRoomDeleted: (message) => {
+      setDeletedMessage(message || 'Room telah dihapus oleh Admin.')
+    },
   })
 
   if (!roomId) return null
+
+  if (deletedMessage) {
+    return (
+      <div className="classmeet-theme flex min-h-screen flex-col items-center justify-center bg-[#ffffff] px-6 text-center text-[#0b1437]">
+        <img
+          src="/logo-issc.png"
+          alt="Logo ISSC"
+          className="mb-6 h-20 w-auto object-contain"
+        />
+        <div className="w-full max-w-md rounded-[10px] border border-[#cbd5f5] bg-[#f3f6ff] p-8 shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#c0262d]">
+            Room {roomId} Ditutup
+          </p>
+          <h1 className="mt-2 text-2xl font-bold text-[#0b1437]">{deletedMessage}</h1>
+          <p className="mt-2 text-sm text-[#434d7e]">
+            Silakan buka kode room baru dari panel Host untuk memulai sesi berikutnya.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/host')}
+            className="mt-6 inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#0d2be3] px-5 text-sm font-bold text-[#ffffff] hover:bg-[#0a21b4]"
+          >
+            Ke Panel Host
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const snapshot = roomQuery.data
   const session = snapshot?.session

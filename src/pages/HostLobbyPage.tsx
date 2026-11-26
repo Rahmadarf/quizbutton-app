@@ -7,6 +7,7 @@ import {
   Monitor,
   Plus,
   Radio,
+  Trash2,
   Users,
   X,
 } from 'lucide-react'
@@ -14,6 +15,12 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useQuestionBank } from '../hooks/useQuestionBank'
+import {
+  clearHostToken,
+  deleteRoomApi,
+  setHostToken,
+  verifyHostPasscode,
+} from '../lib/hostAuth'
 import { normalizeRoomCode } from '../lib/playerStorage'
 import type { SessionStatus } from '../types/quiz'
 
@@ -27,6 +34,11 @@ interface ActiveRoomSummary {
   lastActivityAt: number
 }
 
+type ModalAction =
+  | { kind: 'create'; roomId?: string }
+  | { kind: 'manage'; roomId: string }
+  | { kind: 'delete'; roomId: string }
+
 async function fetchRooms(): Promise<ActiveRoomSummary[]> {
   const res = await fetch('/api/rooms')
   if (!res.ok) throw new Error('Gagal memuat daftar room')
@@ -37,17 +49,21 @@ async function fetchRooms(): Promise<ActiveRoomSummary[]> {
 async function createRoomApi(payload: {
   roomId?: string
   passcode: string
-}): Promise<{ roomId: string }> {
+}): Promise<{ roomId: string; hostToken: string }> {
   const res = await fetch('/api/rooms', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-  const data = (await res.json().catch(() => ({}))) as { roomId?: string; error?: string }
-  if (!res.ok || !data.roomId) {
+  const data = (await res.json().catch(() => ({}))) as {
+    roomId?: string
+    hostToken?: string
+    error?: string
+  }
+  if (!res.ok || !data.roomId || !data.hostToken) {
     throw new Error(data.error || 'Gagal membuat room baru')
   }
-  return { roomId: data.roomId }
+  return { roomId: data.roomId, hostToken: data.hostToken }
 }
 
 export function HostLobbyPage() {
@@ -56,8 +72,7 @@ export function HostLobbyPage() {
   const [customCode, setCustomCode] = useState('')
 
   // Passcode confirmation modal state (always cleared so admin must enter passcode every time)
-  const [passcodeModalOpen, setPasscodeModalOpen] = useState(false)
-  const [pendingRoomId, setPendingRoomId] = useState<string | undefined>(undefined)
+  const [modalAction, setModalAction] = useState<ModalAction | null>(null)
   const [passcode, setPasscode] = useState('')
   const [passcodeError, setPasscodeError] = useState<string | null>(null)
 
@@ -70,45 +85,81 @@ export function HostLobbyPage() {
   const { bankQuery } = useQuestionBank()
   const bank = bankQuery.data
 
-  const closePasscodeModal = () => {
-    setPasscodeModalOpen(false)
-    setPendingRoomId(undefined)
+  const closeModal = () => {
+    setModalAction(null)
     setPasscode('')
     setPasscodeError(null)
   }
 
-  const openPasscodeModal = (roomId?: string) => {
-    setPendingRoomId(roomId)
+  const openModal = (action: ModalAction) => {
+    setModalAction(action)
     setPasscode('')
     setPasscodeError(null)
-    setPasscodeModalOpen(true)
   }
 
   useEffect(() => {
-    if (!passcodeModalOpen) return
+    if (!modalAction) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        closePasscodeModal()
+        closeModal()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [passcodeModalOpen])
+  }, [modalAction])
 
   const createRoomMutation = useMutation({
     mutationFn: (payload: { roomId?: string; passcode: string }) => createRoomApi(payload),
     onSuccess: (data) => {
+      setHostToken(data.roomId, data.hostToken)
       void queryClient.invalidateQueries({ queryKey: ['active-rooms'] })
-      closePasscodeModal()
+      closeModal()
       toast.success(`Room ${data.roomId} siap digunakan!`)
       navigate(`/host/${data.roomId}`)
     },
     onError: (err) => {
-      const msg = err instanceof Error ? err.message : 'Passcode salah'
-      setPasscodeError(msg)
+      setPasscodeError(err instanceof Error ? err.message : 'Passcode salah')
       setPasscode('')
     },
   })
+
+  const manageRoomMutation = useMutation({
+    mutationFn: async ({ roomId, passcode: code }: { roomId: string; passcode: string }) => {
+      const hostToken = await verifyHostPasscode(code)
+      return { roomId, hostToken }
+    },
+    onSuccess: (data) => {
+      setHostToken(data.roomId, data.hostToken)
+      closeModal()
+      navigate(`/host/${data.roomId}`)
+    },
+    onError: (err) => {
+      setPasscodeError(err instanceof Error ? err.message : 'Passcode salah')
+      setPasscode('')
+    },
+  })
+
+  const deleteRoomMutation = useMutation({
+    mutationFn: async ({ roomId, passcode: code }: { roomId: string; passcode: string }) => {
+      await deleteRoomApi(roomId, code)
+      return roomId
+    },
+    onSuccess: (deletedRoomId) => {
+      clearHostToken(deletedRoomId)
+      void queryClient.invalidateQueries({ queryKey: ['active-rooms'] })
+      closeModal()
+      toast.success(`Room ${deletedRoomId} berhasil dihapus.`)
+    },
+    onError: (err) => {
+      setPasscodeError(err instanceof Error ? err.message : 'Passcode salah')
+      setPasscode('')
+    },
+  })
+
+  const isSubmitting =
+    createRoomMutation.isPending ||
+    manageRoomMutation.isPending ||
+    deleteRoomMutation.isPending
 
   const handleCustomSubmit = (e: FormEvent) => {
     e.preventDefault()
@@ -117,23 +168,58 @@ export function HostLobbyPage() {
       toast.error('Masukkan minimal 3 karakter kode room (maks. 6 karakter)')
       return
     }
-    openPasscodeModal(normalized)
+    openModal({ kind: 'create', roomId: normalized })
   }
 
   const handlePasscodeSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (!passcode.trim()) {
+    if (!modalAction) return
+    const trimmed = passcode.trim()
+    if (!trimmed) {
       setPasscodeError('Masukkan passcode admin terlebih dahulu.')
       return
     }
     setPasscodeError(null)
-    createRoomMutation.mutate({
-      roomId: pendingRoomId,
-      passcode: passcode.trim(),
-    })
+
+    if (modalAction.kind === 'create') {
+      createRoomMutation.mutate({ roomId: modalAction.roomId, passcode: trimmed })
+    } else if (modalAction.kind === 'manage') {
+      manageRoomMutation.mutate({ roomId: modalAction.roomId, passcode: trimmed })
+    } else if (modalAction.kind === 'delete') {
+      deleteRoomMutation.mutate({ roomId: modalAction.roomId, passcode: trimmed })
+    }
   }
 
   const rooms = roomsQuery.data ?? []
+
+  const modalTitle =
+    modalAction?.kind === 'delete'
+      ? 'Hapus Room'
+      : modalAction?.kind === 'manage'
+        ? 'Masuk Panel Host'
+        : 'Verifikasi Passcode Admin'
+
+  const modalSubtitle =
+    modalAction?.kind === 'delete'
+      ? `Menghapus room ${modalAction.roomId} — semua peserta akan dikeluarkan`
+      : modalAction?.kind === 'manage'
+        ? `Verifikasi untuk mengelola room ${modalAction.roomId}`
+        : modalAction?.roomId
+          ? `Membuat room kode ${modalAction.roomId}`
+          : 'Membuat room baru dengan kode acak'
+
+  const modalSubmitLabel =
+    modalAction?.kind === 'delete'
+      ? isSubmitting
+        ? 'Menghapus...'
+        : 'Hapus Room'
+      : modalAction?.kind === 'manage'
+        ? isSubmitting
+          ? 'Memverifikasi...'
+          : 'Masuk Host'
+        : isSubmitting
+          ? 'Memverifikasi...'
+          : 'Buat Room'
 
   return (
     <div className="classmeet-theme min-h-screen bg-[#ffffff] text-[#0b1437]">
@@ -198,7 +284,7 @@ export function HostLobbyPage() {
 
             <button
               type="button"
-              onClick={() => openPasscodeModal(undefined)}
+              onClick={() => openModal({ kind: 'create' })}
               className="inline-flex h-12 shrink-0 cursor-pointer items-center gap-2 rounded-[8px] bg-[#ffffff] px-6 text-base font-bold text-[#0d2be3] shadow-[0_8px_32px_rgba(13,43,227,0.16)] transition hover:bg-[#eaf0ff]"
             >
               <Plus className="h-5 w-5" />
@@ -291,7 +377,7 @@ export function HostLobbyPage() {
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <a
                         href={`/display/${room.roomId}`}
                         target="_blank"
@@ -304,10 +390,20 @@ export function HostLobbyPage() {
                       </a>
                       <button
                         type="button"
-                        onClick={() => navigate(`/host/${room.roomId}`)}
+                        onClick={() => openModal({ kind: 'manage', roomId: room.roomId })}
                         className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-[8px] bg-[#0d2be3] px-3 text-xs font-semibold text-[#ffffff] hover:bg-[#0a21b4]"
                       >
+                        <Lock className="h-3 w-3" />
                         Kelola Host
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openModal({ kind: 'delete', roomId: room.roomId })}
+                        aria-label={`Hapus room ${room.roomId}`}
+                        className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-[8px] border border-[#c0262d] bg-[#ffffff] px-2.5 text-xs font-semibold text-[#c0262d] hover:bg-[#fee8e8]"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Hapus
                       </button>
                     </div>
                   </li>
@@ -319,7 +415,7 @@ export function HostLobbyPage() {
       </main>
 
       {/* Passcode Verification Modal (Classmeet blue translucent overlay, never black) */}
-      {passcodeModalOpen && (
+      {modalAction && (
         <div
           role="dialog"
           aria-modal="true"
@@ -327,35 +423,48 @@ export function HostLobbyPage() {
           style={{ backgroundColor: 'rgba(10, 33, 180, 0.55)' }}
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           onClick={(e) => {
-            if (e.target === e.currentTarget) closePasscodeModal()
+            if (e.target === e.currentTarget) closeModal()
           }}
         >
           <div className="w-full max-w-sm rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-6 shadow-[0_8px_32px_rgba(13,43,227,0.16)]">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-[#eaf0ff] text-[#0d2be3]">
-                  <Lock className="h-5 w-5" />
+                <span
+                  className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] ${
+                    modalAction.kind === 'delete'
+                      ? 'bg-[#fee8e8] text-[#c0262d]'
+                      : 'bg-[#eaf0ff] text-[#0d2be3]'
+                  }`}
+                >
+                  {modalAction.kind === 'delete' ? (
+                    <Trash2 className="h-5 w-5" />
+                  ) : (
+                    <Lock className="h-5 w-5" />
+                  )}
                 </span>
                 <div>
                   <h2 id="passcode-dialog-title" className="text-lg font-bold text-[#0b1437]">
-                    Verifikasi Passcode Admin
+                    {modalTitle}
                   </h2>
-                  <p className="text-xs text-[#434d7e]">
-                    {pendingRoomId
-                      ? `Membuat room kode ${pendingRoomId}`
-                      : 'Membuat room baru dengan kode acak'}
-                  </p>
+                  <p className="text-xs text-[#434d7e]">{modalSubtitle}</p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={closePasscodeModal}
+                onClick={closeModal}
                 aria-label="Tutup dialog"
                 className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-[8px] text-[#5c6694] hover:bg-[#eaf0ff] hover:text-[#0b1437]"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
+
+            {modalAction.kind === 'delete' && (
+              <div className="mb-4 rounded-[8px] border border-[#c0262d]/30 bg-[#fee8e8] px-3 py-2.5 text-xs font-medium text-[#c0262d]">
+                Tindakan ini akan menutup room <strong className="font-mono">{modalAction.roomId}</strong>,
+                mengeluarkan seluruh peserta, dan mereset skor sesi di room tersebut.
+              </div>
+            )}
 
             <form onSubmit={handlePasscodeSubmit} className="space-y-4">
               <div>
@@ -393,17 +502,21 @@ export function HostLobbyPage() {
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={closePasscodeModal}
+                  onClick={closeModal}
                   className="h-10 flex-1 cursor-pointer rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] text-sm font-semibold text-[#434d7e] hover:bg-[#eaf0ff]"
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  disabled={createRoomMutation.isPending || !passcode.trim()}
-                  className="h-10 flex-1 cursor-pointer rounded-[8px] bg-[#0d2be3] text-sm font-bold text-[#ffffff] hover:bg-[#0a21b4] disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={isSubmitting || !passcode.trim()}
+                  className={`h-10 flex-1 cursor-pointer rounded-[8px] text-sm font-bold text-[#ffffff] disabled:cursor-not-allowed disabled:opacity-50 ${
+                    modalAction.kind === 'delete'
+                      ? 'bg-[#c0262d] hover:opacity-90'
+                      : 'bg-[#0d2be3] hover:bg-[#0a21b4]'
+                  }`}
                 >
-                  {createRoomMutation.isPending ? 'Memverifikasi...' : 'Buat Room'}
+                  {modalSubmitLabel}
                 </button>
               </div>
             </form>

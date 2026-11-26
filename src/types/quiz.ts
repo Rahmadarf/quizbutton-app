@@ -119,6 +119,7 @@ export type WsServerMessage =
       message?: string
     }
   | { type: 'reset'; roomId: string; serverTimestamp: number }
+  | { type: 'room_deleted'; roomId: string; message: string }
   | { type: 'participants'; roomId: string; participantCount: number }
   | { type: 'pong'; serverTimestamp: number }
 
