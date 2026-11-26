@@ -308,13 +308,18 @@ export function HostPage() {
       <header className="border-b border-[#cbd5f5] bg-[#ffffff] px-4 py-3.5 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
+            <img
+              src="/logo-issc.png"
+              alt="Logo ISSC"
+              className="h-8 w-auto object-contain"
+            />
             <button
               type="button"
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/host')}
               className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] px-3 text-sm font-semibold text-[#2a55d6] hover:bg-[#eaf0ff]"
             >
               <ArrowLeft className="h-4 w-4" />
-              Beranda
+              Daftar Room
             </button>
 
             <div className="flex items-center gap-2 rounded-[8px] border border-[#cbd5f5] bg-[#eaf0ff] px-3 py-1.5">

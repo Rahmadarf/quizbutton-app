@@ -83,6 +83,16 @@ export interface HostRoomSnapshot extends Omit<RoomSnapshot, 'session'> {
   session: QuizSessionHostState
 }
 
+export interface ActiveRoomSummary {
+  roomId: string
+  status: SessionStatus
+  sessionNumber: number
+  totalQuestions: number
+  currentQuestionIndex: number
+  participantCount: number
+  lastActivityAt: number
+}
+
 export type BuzzResult =
   | { accepted: true; event: BuzzEvent }
   | { accepted: false; reason: 'locked'; activeBuzz: BuzzEvent }

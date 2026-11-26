@@ -87,6 +87,20 @@ app.post('/api/bank/reset-used', (_req, res) => {
 
 // ---------------- Room & Buzzer API ----------------
 
+app.get('/api/rooms', (_req, res) => {
+  res.json({ rooms: roomManager.listRooms() })
+})
+
+app.post('/api/rooms', (req, res) => {
+  const rawRoomId = typeof req.body?.roomId === 'string' ? req.body.roomId : undefined
+  if (rawRoomId && !normalizeRoomId(rawRoomId)) {
+    res.status(400).json({ error: 'Kode room harus 3-12 karakter huruf/angka.' })
+    return
+  }
+  const created = roomManager.createRoom(rawRoomId)
+  res.status(201).json(created)
+})
+
 app.get('/api/rooms/:roomId', (req, res) => {
   const roomId = normalizeRoomId(req.params.roomId)
   if (!roomId) {

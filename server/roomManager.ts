@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { QuestionBankStore } from './questionBank.js'
 import type {
+  ActiveRoomSummary,
   AnswerAttempt,
   BankQuestion,
   BuzzEvent,
@@ -54,6 +55,18 @@ interface RoomState {
 }
 
 const VALID_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/
+const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function generateUniqueRoomCode(existing: Map<string, RoomState>): string {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let code = ''
+    for (let i = 0; i < 6; i += 1) {
+      code += ROOM_CODE_CHARS[Math.floor(Math.random() * ROOM_CODE_CHARS.length)]
+    }
+    if (!existing.has(code)) return code
+  }
+  return randomUUID().replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 6)
+}
 
 export function normalizeRoomId(raw: string): string | null {
   const cleaned = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')
@@ -223,6 +236,32 @@ export class RoomManager {
         roomId: room.roomId,
         serverTimestamp: Date.now(),
       })
+    }
+  }
+
+  public listRooms(): ActiveRoomSummary[] {
+    return Array.from(this.rooms.values())
+      .map((room) => ({
+        roomId: room.roomId,
+        status: room.sessionStatus,
+        sessionNumber: room.sessionNumber,
+        totalQuestions: room.sessionQuestions.length,
+        currentQuestionIndex: room.currentQuestionIndex,
+        participantCount: this.getPlayerCount(room),
+        lastActivityAt: room.lastActivityAt,
+      }))
+      .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
+  }
+
+  public createRoom(customRoomId?: string): { roomId: string; snapshot: HostRoomSnapshot } {
+    const normalized = customRoomId ? normalizeRoomId(customRoomId) : null
+    const roomId = normalized || generateUniqueRoomCode(this.rooms)
+    const room = this.getOrCreateRoom(roomId)
+    room.buzzerMode = 'manual'
+    room.lastActivityAt = Date.now()
+    return {
+      roomId,
+      snapshot: this.getHostSnapshot(roomId),
     }
   }
 

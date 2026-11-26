@@ -6,6 +6,7 @@ import { emitBridgeEvent, isEmbedLayout, isInIframe } from './lib/embedBridge'
 import { DisplayPage } from './pages/DisplayPage'
 import { EmbedDemoPage } from './pages/EmbedDemoPage'
 import { HomePage } from './pages/HomePage'
+import { HostLobbyPage } from './pages/HostLobbyPage'
 import { HostPage } from './pages/HostPage'
 import { JoinPage } from './pages/JoinPage'
 import { RoomPage } from './pages/RoomPage'
@@ -24,8 +25,10 @@ function AppShell() {
   const embedded = isEmbedLayout(location.search)
   const isStandaloneScreen =
     location.pathname === '/embed-demo' ||
+    location.pathname === '/host' ||
     location.pathname.startsWith('/display/') ||
-    location.pathname.startsWith('/host/')
+    location.pathname.startsWith('/host/') ||
+    location.pathname.startsWith('/room/')
   const showFooter = !embedded && !isStandaloneScreen
 
   useEffect(() => {
@@ -44,6 +47,7 @@ function AppShell() {
           <Route path="/join/:roomId" element={<JoinPage />} />
           <Route path="/room/:roomId" element={<RoomPage />} />
           <Route path="/display/:roomId" element={<DisplayPage />} />
+          <Route path="/host" element={<HostLobbyPage />} />
           <Route path="/host/:roomId" element={<HostPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/embed-demo" element={<EmbedDemoPage />} />
@@ -52,12 +56,14 @@ function AppShell() {
       </main>
 
       {showFooter && (
-        <footer className="mt-auto border-t border-white/20 bg-white/10 py-4 text-white backdrop-blur-sm">
+        <footer className="mt-auto border-t border-[#cbd5f5] bg-[#f3f6ff] py-4 text-[#434d7e]">
           <div className="container mx-auto flex items-center justify-center gap-2 px-4 text-sm">
-            <span className="font-medium">© {new Date().getFullYear()} QuizButton.app</span>
-            <span className="text-white/60">•</span>
-            <Link to="/terms" className="font-medium transition-colors hover:text-white/80">
-              Terms &amp; Conditions
+            <span className="font-semibold text-[#0b1437]">
+              © {new Date().getFullYear()} ISSC Quiz Buzzer
+            </span>
+            <span className="text-[#8e9cd6]">•</span>
+            <Link to="/terms" className="font-medium text-[#2a55d6] transition-colors hover:text-[#0d2be3]">
+              Syarat &amp; Ketentuan
             </Link>
           </div>
         </footer>
