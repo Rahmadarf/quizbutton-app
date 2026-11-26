@@ -45,6 +45,89 @@
   }
 }
 
+/* ============================================================================
+ * Classmeet Exact Color & Surface Tokens (from classmeet/app/globals.css)
+ * Mode terang saja. TIDAK ADA permukaan hitam atau hampir hitam.
+ * ============================================================================ */
+.classmeet-theme {
+  color-scheme: light;
+
+  --cm-page: #ffffff;
+  --cm-bg-0: #f3f6ff;
+  --cm-bg-1: #ffffff;
+  --cm-bg-2: #eaf0ff;
+  --cm-bg-3: #d6e0ff;
+  --cm-border: #cbd5f5;
+  --cm-border-strong: #8e9cd6;
+  --cm-overlay: rgba(10, 33, 180, 0.55);
+
+  --cm-text: #0b1437;
+  --cm-text-muted: #434d7e;
+  --cm-text-dim: #5c6694;
+  --cm-text-on-accent: #03071e;
+
+  --cm-primary: #0d2be3;
+  --cm-primary-hover: #0a21b4;
+  --cm-on-primary: #ffffff;
+
+  --cm-accent: #fa9f1f;
+  --cm-accent-text: #a35500;
+  --cm-accent-2: #fbcd3a;
+  --cm-blue: #2a5fe6;
+  --cm-blue-text: #2a55d6;
+  --cm-link: #0d2be3;
+  --cm-blue-light: #82aff9;
+  --cm-cyan: #25eeef;
+  --cm-cyan-text: #00717a;
+  --cm-hero: linear-gradient(167deg, #2a5fe6 14.6%, #0d2be3 85.4%);
+
+  --cm-ok: #34d399;
+  --cm-ok-soft: #dff8ef;
+  --cm-ok-text: #09704a;
+  --cm-bad: #f87171;
+  --cm-bad-soft: #fee8e8;
+  --cm-bad-text: #c0262d;
+  --cm-cyan-soft: #dcfcfc;
+
+  --cm-rank-gray: #99a1b3;
+
+  --cm-radius-panel: 10px;
+  --cm-radius-control: 8px;
+  --cm-radius-row: 14px;
+  --cm-radius-tab: 12px;
+  --cm-radius-tabs: 16px;
+
+  --cm-shadow-card: 0 1px 3px rgba(13, 43, 227, 0.1), 0 4px 16px rgba(13, 43, 227, 0.08);
+  --cm-shadow-dialog: 0 8px 32px rgba(13, 43, 227, 0.16);
+  --cm-shadow-hero: 0 8px 32px rgba(13, 43, 227, 0.28);
+  --cm-focus-ring: 0 0 0 2px #ffffff, 0 0 0 5px #2a55d6;
+
+  background-color: var(--cm-page);
+  color: var(--cm-text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", Inter, system-ui, sans-serif;
+}
+
+.classmeet-theme .tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.classmeet-theme :where(a, button, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--cm-focus-ring);
+}
+
+.classmeet-theme :where(input, select, textarea):is(:focus, :focus-visible) {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--cm-blue-text);
+}
+
+.classmeet-theme ::selection {
+  background: var(--cm-bg-3);
+  color: var(--cm-text);
+}
+
 @keyframes bounce-in {
   0% {
     transform: scale(0.7);
@@ -71,4 +154,34 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes cm-ring-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(13, 43, 227, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(13, 43, 227, 0.35);
+  }
+}
+
+.cm-ring-pulse {
+  animation: cm-ring-pulse 1s ease-in-out infinite;
+}
+
+@keyframes cm-board-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.cm-board-card {
+  transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1), background-color 250ms ease;
+  animation: cm-board-in 350ms ease-out;
 }

@@ -83,12 +83,17 @@ export function RoomPage() {
   const triggerOverlay = useCallback(
     (event: BuzzEvent) => {
       clearOverlayTimers()
+      setOverlayBuzz(event)
+      setIsFading(false)
+
+      // In manual lock mode (until Host resets), keep overlay up until server emits reset
+      if (event.manualLock || event.lockedUntil === null) {
+        return
+      }
+
       const remainingMs = Math.max(500, event.lockedUntil - Date.now())
       const fadeDurationMs = Math.min(event.fadeDurationMs || 500, remainingMs)
       const solidDurationMs = Math.max(0, remainingMs - fadeDurationMs)
-
-      setOverlayBuzz(event)
-      setIsFading(false)
 
       fadeTimerRef.current = window.setTimeout(() => {
         setIsFading(true)
@@ -132,16 +137,29 @@ export function RoomPage() {
   // Keep mobile screen awake while waiting in the quiz room
   useWakeLock(Boolean(player && roomId))
 
-  const { buzzMutation } = useRoomRealtime({
+  const { roomQuery, buzzMutation } = useRoomRealtime({
     roomId,
+    role: 'player',
+    player,
     enabled: Boolean(player && roomId),
     onBuzz: triggerOverlay,
     onReset: handleReset,
+    onBuzzRejected: (reason, message) => {
+      if (reason === 'gate_closed' || reason === 'question_resolved') {
+        toast.info(message || 'Buzzer sedang dikunci oleh Host')
+      }
+    },
   })
 
   if (!player || !roomId) {
     return null
   }
+
+  const session = roomQuery.data?.session
+  const gateClosed = session ? !session.buzzerGateOpen : false
+  const questionResolved = session ? session.status === 'active' && session.questionResolved : false
+  const sessionFinished = session?.status === 'finished'
+  const pressDisabled = Boolean(overlayBuzz) || gateClosed || questionResolved || sessionFinished
 
   const joinUrl = `${window.location.origin}/join/${roomId}`
 
@@ -182,12 +200,20 @@ export function RoomPage() {
   }
 
   const handlePress = () => {
-    if (overlayBuzz) return
+    if (pressDisabled) return
     buzzMutation.mutate({
       playerName: player.name,
       color: player.color,
     })
   }
+
+  const bottomText = sessionFinished
+    ? 'Sesi kuis selesai! Lihat skor akhir di layar display.'
+    : questionResolved
+      ? 'Soal terjawab! Menunggu Host ke soal berikutnya...'
+      : gateClosed
+        ? 'Buzzer sedang dikunci sementara oleh Host...'
+        : "Press the button to change everyone's screen color!"
 
   return (
     <div className="flex min-h-screen flex-col bg-gradient-to-br from-purple-600 to-blue-600">
@@ -279,17 +305,15 @@ export function RoomPage() {
         <button
           type="button"
           onClick={handlePress}
-          disabled={Boolean(overlayBuzz)}
-          className="h-64 w-64 transform cursor-pointer select-none rounded-full bg-white text-6xl font-bold text-purple-600 shadow-2xl transition hover:scale-105 hover:bg-gray-100 active:scale-95 disabled:cursor-default"
+          disabled={pressDisabled}
+          className="h-64 w-64 transform cursor-pointer select-none rounded-full bg-white text-6xl font-bold text-purple-600 shadow-2xl transition hover:scale-105 hover:bg-gray-100 active:scale-95 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:scale-100"
         >
-          PRESS
+          {gateClosed || questionResolved || sessionFinished ? 'WAIT' : 'PRESS'}
         </button>
       </div>
 
       <div className="bg-white/90 p-4 text-center backdrop-blur-sm">
-        <p className="text-sm text-gray-600">
-          Press the button to change everyone&apos;s screen color!
-        </p>
+        <p className="text-sm text-gray-600">{bottomText}</p>
       </div>
 
       {overlayBuzz && (
@@ -309,7 +333,9 @@ export function RoomPage() {
               className="mt-4 text-xl text-white/90 drop-shadow-md md:text-2xl"
               style={{ animation: 'fade-slide-down 0.4s ease-out 0.2s both' }}
             >
-              pressed the button!
+              {overlayBuzz.manualLock
+                ? 'pressed the button! Menunggu Host...'
+                : 'pressed the button!'}
             </p>
           </div>
         </div>

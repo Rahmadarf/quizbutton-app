@@ -1,45 +1,93 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { emitBridgeEvent, emitBuzzBridgeEvent } from '../lib/embedBridge'
-import type { BuzzEvent, RoomSnapshot, WsServerMessage } from '../types/quiz'
+import type {
+  BuzzEvent,
+  BuzzerMode,
+  HostRoomSnapshot,
+  OptionKey,
+  PlayerProfile,
+  RoomSnapshot,
+  WsServerMessage,
+} from '../types/quiz'
+import { BANK_QUERY_KEY } from './useQuestionBank'
 
-export function roomQueryKey(roomId: string) {
-  return ['room', roomId] as const
+export type RealtimeRole = 'player' | 'display' | 'host'
+
+export function roomQueryKey(roomId: string, role: RealtimeRole = 'player') {
+  return ['room', roomId, role === 'host' ? 'host' : 'public'] as const
 }
 
-async function fetchRoomSnapshot(roomId: string): Promise<RoomSnapshot> {
-  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}`)
+async function fetchRoomSnapshot<T extends RoomSnapshot | HostRoomSnapshot>(
+  roomId: string,
+  role: RealtimeRole,
+): Promise<T> {
+  const qs = role === 'host' ? '?role=host' : ''
+  const res = await fetch(`/api/rooms/${encodeURIComponent(roomId)}${qs}`)
   if (!res.ok) {
     throw new Error('Failed to load room state')
   }
-  return (await res.json()) as RoomSnapshot
+  return (await res.json()) as T
 }
 
-function buildWsUrl(roomId: string): string {
+function buildWsUrl(roomId: string, role: RealtimeRole, player?: PlayerProfile | null): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}/ws?room=${encodeURIComponent(roomId)}`
+  const params = new URLSearchParams({ room: roomId, role })
+  if (role === 'player' && player) {
+    params.set('playerName', player.name)
+    params.set('color', player.color)
+  }
+  return `${protocol}//${window.location.host}/ws?${params.toString()}`
+}
+
+async function postJson<T>(url: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  const data = (await res.json().catch(() => ({}))) as { error?: string } & T
+  if (!res.ok) {
+    throw new Error(data.error || 'Request failed')
+  }
+  return data
 }
 
 interface UseRoomRealtimeOptions {
   roomId: string
+  role?: RealtimeRole
+  player?: PlayerProfile | null
   enabled: boolean
   onBuzz?: (event: BuzzEvent) => void
   onReset?: (roomId: string, serverTimestamp: number) => void
+  onBuzzRejected?: (reason: string, message?: string) => void
 }
 
-export function useRoomRealtime({ roomId, enabled, onBuzz, onReset }: UseRoomRealtimeOptions) {
+export function useRoomRealtime<TSnapshot extends RoomSnapshot | HostRoomSnapshot = RoomSnapshot>({
+  roomId,
+  role = 'player',
+  player = null,
+  enabled,
+  onBuzz,
+  onReset,
+  onBuzzRejected,
+}: UseRoomRealtimeOptions) {
   const queryClient = useQueryClient()
   const wsRef = useRef<WebSocket | null>(null)
   const onBuzzRef = useRef(onBuzz)
   const onResetRef = useRef(onReset)
+  const onRejectedRef = useRef(onBuzzRejected)
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'reconnecting'>('connecting')
 
   onBuzzRef.current = onBuzz
   onResetRef.current = onReset
+  onRejectedRef.current = onBuzzRejected
 
-  const roomQuery = useQuery<RoomSnapshot>({
-    queryKey: roomQueryKey(roomId),
-    queryFn: () => fetchRoomSnapshot(roomId),
+  const queryKey = roomQueryKey(roomId, role)
+
+  const roomQuery = useQuery<TSnapshot>({
+    queryKey,
+    queryFn: () => fetchRoomSnapshot<TSnapshot>(roomId, role),
     enabled: enabled && Boolean(roomId),
     staleTime: Infinity,
     refetchOnWindowFocus: false,
@@ -57,7 +105,7 @@ export function useRoomRealtime({ roomId, enabled, onBuzz, onReset }: UseRoomRea
       if (disposed) return
       setConnectionStatus(reconnectAttempt === 0 ? 'connecting' : 'reconnecting')
 
-      const ws = new WebSocket(buildWsUrl(roomId))
+      const ws = new WebSocket(buildWsUrl(roomId, role, player))
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -82,30 +130,43 @@ export function useRoomRealtime({ roomId, enabled, onBuzz, onReset }: UseRoomRea
           return
         }
 
-        if (msg.type === 'state') {
-          queryClient.setQueryData(roomQueryKey(roomId), msg.snapshot)
-          emitBridgeEvent({
-            source: 'quizbutton',
-            type: 'quizbutton:state',
-            payload: { roomId, snapshot: msg.snapshot },
-          })
-          if (msg.snapshot.activeBuzz && msg.snapshot.remainingLockMs > 0) {
-            onBuzzRef.current?.(msg.snapshot.activeBuzz)
+        if (msg.type === 'state' || msg.type === 'host_state') {
+          queryClient.setQueryData(queryKey, msg.snapshot)
+          if (msg.type === 'state') {
+            emitBridgeEvent({
+              source: 'quizbutton',
+              type: 'quizbutton:state',
+              payload: { roomId, snapshot: msg.snapshot },
+            })
+          }
+          const active = msg.snapshot.activeBuzz
+          if (active && (active.manualLock || (msg.snapshot.remainingLockMs ?? 0) > 0)) {
+            onBuzzRef.current?.(active)
           }
           return
         }
 
+        if (msg.type === 'session_state' || msg.type === 'host_session_state') {
+          queryClient.setQueryData<TSnapshot>(queryKey, (prev) =>
+            prev ? ({ ...prev, session: msg.session } as TSnapshot) : prev,
+          )
+          return
+        }
+
         if (msg.type === 'buzz') {
-          queryClient.setQueryData<RoomSnapshot>(roomQueryKey(roomId), (prev) => {
-            const existingHistory = prev?.history ?? []
+          queryClient.setQueryData<TSnapshot>(queryKey, (prev) => {
+            if (!prev) return prev
+            const existingHistory = prev.history ?? []
             const alreadyInHistory = existingHistory.some((item) => item.buzzId === msg.event.buzzId)
             return {
-              roomId,
+              ...prev,
               activeBuzz: msg.event,
               isLocked: true,
               lockedUntil: msg.event.lockedUntil,
-              remainingLockMs: Math.max(0, msg.event.lockedUntil - Date.now()),
-              participantCount: prev?.participantCount ?? 1,
+              remainingLockMs:
+                msg.event.lockedUntil !== null
+                  ? Math.max(0, msg.event.lockedUntil - Date.now())
+                  : null,
               history: alreadyInHistory
                 ? existingHistory
                 : [msg.event, ...existingHistory].slice(0, 50),
@@ -116,8 +177,13 @@ export function useRoomRealtime({ roomId, enabled, onBuzz, onReset }: UseRoomRea
           return
         }
 
+        if (msg.type === 'buzz_rejected') {
+          onRejectedRef.current?.(msg.reason, msg.message)
+          return
+        }
+
         if (msg.type === 'reset') {
-          queryClient.setQueryData<RoomSnapshot>(roomQueryKey(roomId), (prev) =>
+          queryClient.setQueryData<TSnapshot>(queryKey, (prev) =>
             prev
               ? {
                   ...prev,
@@ -138,7 +204,7 @@ export function useRoomRealtime({ roomId, enabled, onBuzz, onReset }: UseRoomRea
         }
 
         if (msg.type === 'participants') {
-          queryClient.setQueryData<RoomSnapshot>(roomQueryKey(roomId), (prev) =>
+          queryClient.setQueryData<TSnapshot>(queryKey, (prev) =>
             prev ? { ...prev, participantCount: msg.participantCount } : prev,
           )
         }
@@ -176,7 +242,7 @@ export function useRoomRealtime({ roomId, enabled, onBuzz, onReset }: UseRoomRea
         wsRef.current = null
       }
     }
-  }, [enabled, queryClient, roomId])
+  }, [enabled, player?.color, player?.name, queryClient, role, roomId])
 
   const buzzMutation = useMutation({
     mutationFn: async ({ playerName, color }: { playerName: string; color: string }) => {
@@ -200,9 +266,124 @@ export function useRoomRealtime({ roomId, enabled, onBuzz, onReset }: UseRoomRea
     },
   })
 
+  const syncHostSnapshot = (snapshot?: HostRoomSnapshot, bank?: unknown) => {
+    if (snapshot) {
+      queryClient.setQueryData(roomQueryKey(roomId, 'host'), snapshot)
+    }
+    if (bank) {
+      queryClient.setQueryData(BANK_QUERY_KEY, bank)
+    }
+  }
+
+  const startSessionMutation = useMutation({
+    mutationFn: (opts?: { count?: number; shuffle?: boolean; resetScores?: boolean }) =>
+      postJson<{ snapshot: HostRoomSnapshot; bank: unknown }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/start`,
+        opts ?? { count: 10, shuffle: true, resetScores: true },
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot, data.bank),
+  })
+
+  const submitAnswerMutation = useMutation({
+    mutationFn: (option: OptionKey) =>
+      postJson<{ ok: true; correct: boolean; snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/answer`,
+        { option },
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const revealAnswerMutation = useMutation({
+    mutationFn: () =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/reveal`,
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const nextQuestionMutation = useMutation({
+    mutationFn: () =>
+      postJson<{ snapshot: HostRoomSnapshot; bank: unknown }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/next`,
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot, data.bank),
+  })
+
+  const finishSessionMutation = useMutation({
+    mutationFn: () =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/finish`,
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const standbySessionMutation = useMutation({
+    mutationFn: () =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/standby`,
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const resetBuzzMutation = useMutation({
+    mutationFn: () =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/reset-buzz`,
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const setGateMutation = useMutation({
+    mutationFn: (open: boolean) =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/gate`,
+        { open },
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const setModeMutation = useMutation({
+    mutationFn: (mode: BuzzerMode) =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/mode`,
+        { mode },
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const adjustScoreMutation = useMutation({
+    mutationFn: (payload: { playerName: string; delta: number; color?: string }) =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/score`,
+        payload,
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
+  const resetScoresMutation = useMutation({
+    mutationFn: () =>
+      postJson<{ snapshot: HostRoomSnapshot }>(
+        `/api/rooms/${encodeURIComponent(roomId)}/session/reset-scores`,
+      ),
+    onSuccess: (data) => syncHostSnapshot(data.snapshot),
+  })
+
   return {
     roomQuery,
     buzzMutation,
     connectionStatus,
+    hostActions: {
+      startSessionMutation,
+      submitAnswerMutation,
+      revealAnswerMutation,
+      nextQuestionMutation,
+      finishSessionMutation,
+      standbySessionMutation,
+      resetBuzzMutation,
+      setGateMutation,
+      setModeMutation,
+      adjustScoreMutation,
+      resetScoresMutation,
+    },
   }
 }

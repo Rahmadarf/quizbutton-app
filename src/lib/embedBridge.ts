@@ -24,8 +24,9 @@ export type QuizButtonBridgeEvent =
         buzzId: string
         winner: { name: string; color: string }
         serverTimestamp: number
-        lockDurationMs: number
-        lockedUntil: number
+        lockDurationMs: number | null
+        lockedUntil: number | null
+        manualLock: boolean
       }
     }
   | {
@@ -78,6 +79,7 @@ export function emitBuzzBridgeEvent(event: BuzzEvent): void {
       serverTimestamp: event.serverTimestamp,
       lockDurationMs: event.lockDurationMs,
       lockedUntil: event.lockedUntil,
+      manualLock: event.manualLock,
     },
   })
 }
