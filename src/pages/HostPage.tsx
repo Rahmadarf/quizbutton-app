@@ -5,8 +5,10 @@ import {
   CheckCircle2,
   Copy,
   Database,
+  Download,
   ExternalLink,
   Eye,
+  FileSpreadsheet,
   Flag,
   Lock,
   Minus,
@@ -22,11 +24,16 @@ import {
   XCircle,
   Zap,
 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useQuestionBank } from '../hooks/useQuestionBank'
 import { useRoomRealtime } from '../hooks/useRoomRealtime'
+import {
+  downloadCsvTemplate,
+  parseQuestionsCsv,
+  type CsvParseResult,
+} from '../lib/csvQuestions'
 import { normalizeRoomCode } from '../lib/playerStorage'
 import {
   OPTION_KEYS,
@@ -61,6 +68,12 @@ export function HostPage() {
   const [activeTab, setActiveTab] = useState<'control' | 'bank'>('control')
   const [form, setForm] = useState<QuestionInput>(EMPTY_FORM)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [importMode, setImportMode] = useState<'csv' | 'json'>('csv')
+  const [csvFileName, setCsvFileName] = useState<string | null>(null)
+  const [csvPreview, setCsvPreview] = useState<CsvParseResult | null>(null)
+  const [skipDuplicates, setSkipDuplicates] = useState(true)
+  const [isDraggingCsv, setIsDraggingCsv] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [importText, setImportText] = useState('')
   const [confirmResetUsed, setConfirmResetUsed] = useState(false)
   const [newPlayerName, setNewPlayerName] = useState('')
@@ -196,6 +209,54 @@ export function HostPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
+  const handleReadCsvFile = async (file: File) => {
+    try {
+      const text = await file.text()
+      const parsed = parseQuestionsCsv(text)
+      setCsvFileName(file.name)
+      setCsvPreview(parsed)
+      if (parsed.questions.length === 0 && parsed.errors.length > 0) {
+        toast.error(parsed.errors[0].message)
+      }
+    } catch {
+      toast.error('Gagal membaca file CSV')
+    }
+  }
+
+  const handleCsvInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      void handleReadCsvFile(file)
+    }
+    e.target.value = ''
+  }
+
+  const handleCsvDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDraggingCsv(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file) {
+      void handleReadCsvFile(file)
+    }
+  }
+
+  const handleConfirmCsvImport = () => {
+    if (!csvPreview || csvPreview.questions.length === 0) return
+    importQuestionsMutation.mutate(
+      { questions: csvPreview.questions, skipDuplicates },
+      {
+        onSuccess: (res) => {
+          const dupNote = res.duplicates > 0 ? `, duplikat dilewati: ${res.duplicates}` : ''
+          const skipNote = res.skipped > 0 ? `, tidak valid: ${res.skipped}` : ''
+          toast.success(`Berhasil import ${res.added} soal dari CSV${dupNote}${skipNote}`)
+          setCsvFileName(null)
+          setCsvPreview(null)
+        },
+        onError: (err) => toast.error(err instanceof Error ? err.message : 'Import CSV gagal'),
+      },
+    )
+  }
+
   const handleImportJson = () => {
     try {
       const parsed = JSON.parse(importText) as unknown
@@ -204,13 +265,17 @@ export function HostPage() {
         toast.error('JSON harus berupa array [...] soal')
         return
       }
-      importQuestionsMutation.mutate(list, {
-        onSuccess: (res) => {
-          toast.success(`Berhasil import ${res.added} soal (dilewati: ${res.skipped})`)
-          setImportText('')
+      importQuestionsMutation.mutate(
+        { questions: list, skipDuplicates },
+        {
+          onSuccess: (res) => {
+            const dupNote = res.duplicates > 0 ? `, duplikat: ${res.duplicates}` : ''
+            toast.success(`Berhasil import ${res.added} soal (dilewati: ${res.skipped}${dupNote})`)
+            setImportText('')
+          },
+          onError: (err) => toast.error(err instanceof Error ? err.message : 'Import gagal'),
         },
-        onError: (err) => toast.error(err instanceof Error ? err.message : 'Import gagal'),
-      })
+      )
     } catch {
       toast.error('Format JSON tidak valid')
     }
@@ -828,15 +893,210 @@ export function HostPage() {
             </section>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-              {/* Left 5 cols: Add/Edit Form + JSON Import */}
+              {/* Left 5 cols: CSV/JSON Import + Add/Edit Form */}
               <div className="space-y-6 lg:col-span-5">
+                {/* Bulk CSV / JSON Import */}
+                <section className="space-y-4 rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-5 shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-5 w-5 text-[#0d2be3]" />
+                      <h2 className="text-lg font-bold text-[#0b1437]">Import Soal Otomatis</h2>
+                    </div>
+
+                    <div className="inline-flex rounded-[12px] bg-[#eaf0ff] p-0.5 text-xs font-semibold">
+                      <button
+                        type="button"
+                        onClick={() => setImportMode('csv')}
+                        className={`cursor-pointer rounded-[10px] px-2.5 py-1 transition-all ${
+                          importMode === 'csv'
+                            ? 'bg-[#ffffff] text-[#0d2be3] shadow-xs'
+                            : 'text-[#434d7e]'
+                        }`}
+                      >
+                        CSV (Excel/Sheets)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setImportMode('json')}
+                        className={`cursor-pointer rounded-[10px] px-2.5 py-1 transition-all ${
+                          importMode === 'json'
+                            ? 'bg-[#ffffff] text-[#0d2be3] shadow-xs'
+                            : 'text-[#434d7e]'
+                        }`}
+                      >
+                        JSON
+                      </button>
+                    </div>
+                  </div>
+
+                  {importMode === 'csv' ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[8px] bg-[#f3f6ff] px-3 py-2 text-xs text-[#434d7e] border border-[#cbd5f5]">
+                        <span>
+                          Kolom: <code className="font-mono font-semibold text-[#0b1437]">kategori,pertanyaan,A,B,C,D,kunci,gambar</code>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={downloadCsvTemplate}
+                          className="inline-flex cursor-pointer items-center gap-1 font-semibold text-[#0d2be3] hover:underline"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Template CSV
+                        </button>
+                      </div>
+
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={handleCsvInputChange}
+                        className="hidden"
+                      />
+
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => fileInputRef.current?.click()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            fileInputRef.current?.click()
+                          }
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault()
+                          setIsDraggingCsv(true)
+                        }}
+                        onDragLeave={() => setIsDraggingCsv(false)}
+                        onDrop={handleCsvDrop}
+                        className={`flex cursor-pointer flex-col items-center justify-center rounded-[10px] border-2 border-dashed px-4 py-6 text-center transition-colors ${
+                          isDraggingCsv
+                            ? 'border-[#0d2be3] bg-[#eaf0ff]'
+                            : 'border-[#8e9cd6] bg-[#f3f6ff] hover:bg-[#eaf0ff]'
+                        }`}
+                      >
+                        <Upload className="mb-2 h-6 w-6 text-[#2a55d6]" />
+                        <p className="text-sm font-semibold text-[#0b1437]">
+                          {csvFileName ? csvFileName : 'Klik atau seret file .csv ke sini'}
+                        </p>
+                        <p className="mt-0.5 text-xs text-[#5c6694]">
+                          Otomatis mendeteksi pemisah koma (,) maupun titik koma (;) dari Excel
+                        </p>
+                      </div>
+
+                      <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-[#434d7e]">
+                        <input
+                          type="checkbox"
+                          checked={skipDuplicates}
+                          onChange={(e) => setSkipDuplicates(e.target.checked)}
+                          className="h-4 w-4 accent-[#0d2be3]"
+                        />
+                        Lewati soal duplikat (jika pertanyaan sudah ada di Bank Soal)
+                      </label>
+
+                      {csvPreview && (
+                        <div className="space-y-2.5 rounded-[8px] border border-[#cbd5f5] bg-[#f3f6ff] p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <span className="font-semibold text-[#0b1437]">
+                              Hasil baca ({csvPreview.delimiter === ';' ? 'pemisah ;' : 'pemisah ,'}):
+                            </span>
+                            <div className="flex gap-2">
+                              <span className="tnum rounded-full bg-[#dff8ef] px-2.5 py-0.5 font-bold text-[#09704a]">
+                                {csvPreview.questions.length} valid
+                              </span>
+                              {csvPreview.errors.length > 0 && (
+                                <span className="tnum rounded-full bg-[#fee8e8] px-2.5 py-0.5 font-bold text-[#c0262d]">
+                                  {csvPreview.errors.length} error
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {csvPreview.errors.length > 0 && (
+                            <ul className="max-h-28 space-y-1 overflow-y-auto rounded-[6px] bg-[#fee8e8] p-2 text-xs text-[#c0262d]">
+                              {csvPreview.errors.slice(0, 10).map((err, idx) => (
+                                <li key={`${err.row}-${idx}`}>
+                                  <strong>Baris {err.row}:</strong> {err.message}
+                                </li>
+                              ))}
+                              {csvPreview.errors.length > 10 && (
+                                <li>...dan {csvPreview.errors.length - 10} baris error lainnya</li>
+                              )}
+                            </ul>
+                          )}
+
+                          {csvPreview.questions.length > 0 && (
+                            <div className="max-h-32 space-y-1 overflow-y-auto rounded-[6px] border border-[#cbd5f5] bg-[#ffffff] p-2 text-xs text-[#434d7e]">
+                              {csvPreview.questions.slice(0, 5).map((q, idx) => (
+                                <div key={idx} className="truncate">
+                                  <strong className="text-[#0b1437]">{idx + 1}.</strong> {q.prompt}{' '}
+                                  <span className="font-bold text-[#09704a]">
+                                    (Kunci: {q.correctOption})
+                                  </span>
+                                </div>
+                              ))}
+                              {csvPreview.questions.length > 5 && (
+                                <div className="text-[#5c6694]">
+                                  ...+{csvPreview.questions.length - 5} soal lainnya siap di-import
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={handleConfirmCsvImport}
+                              disabled={
+                                csvPreview.questions.length === 0 ||
+                                importQuestionsMutation.isPending
+                              }
+                              className="h-9 flex-1 cursor-pointer rounded-[8px] bg-[#0d2be3] text-sm font-semibold text-[#ffffff] hover:bg-[#0a21b4] disabled:opacity-45"
+                            >
+                              Import {csvPreview.questions.length} Soal ke Bank
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCsvFileName(null)
+                                setCsvPreview(null)
+                              }}
+                              className="h-9 cursor-pointer rounded-[8px] border border-[#8e9cd6] bg-[#ffffff] px-3 text-sm font-semibold text-[#434d7e]"
+                            >
+                              Batal
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <textarea
+                        rows={5}
+                        value={importText}
+                        onChange={(e) => setImportText(e.target.value)}
+                        placeholder={IMPORT_PLACEHOLDER}
+                        className="w-full rounded-[8px] border border-[#8e9cd6] bg-[#f3f6ff] p-3 font-mono text-xs text-[#0b1437] placeholder:text-[#5c6694]"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleImportJson}
+                        disabled={!importText.trim()}
+                        className="h-9 w-full cursor-pointer rounded-[8px] border-2 border-[#2a55d6] bg-[#ffffff] text-sm font-semibold text-[#2a55d6] hover:bg-[#eaf0ff] disabled:opacity-45"
+                      >
+                        Import JSON ke Bank Soal
+                      </button>
+                    </div>
+                  )}
+                </section>
+
                 <form
                   onSubmit={handleSaveQuestion}
                   className="space-y-4 rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-5 shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]"
                 >
                   <div className="flex items-center justify-between">
                     <h2 className="text-lg font-bold text-[#0b1437]">
-                      {editingId ? 'Edit Soal' : 'Tambah Soal Baru'}
+                      {editingId ? 'Edit Soal' : 'Tambah Soal Manual'}
                     </h2>
                     {editingId && (
                       <button
@@ -942,29 +1202,6 @@ export function HostPage() {
                     {editingId ? 'Simpan Perubahan' : 'Tambahkan ke Bank Soal'}
                   </button>
                 </form>
-
-                {/* Bulk JSON Import */}
-                <section className="space-y-3 rounded-[10px] border border-[#cbd5f5] bg-[#ffffff] p-5 shadow-[0_1px_3px_rgba(13,43,227,0.1),0_4px_16px_rgba(13,43,227,0.08)]">
-                  <div className="flex items-center gap-2">
-                    <Upload className="h-4 w-4 text-[#0d2be3]" />
-                    <h2 className="text-base font-bold text-[#0b1437]">Import Banyak Soal (JSON)</h2>
-                  </div>
-                  <textarea
-                    rows={5}
-                    value={importText}
-                    onChange={(e) => setImportText(e.target.value)}
-                    placeholder={IMPORT_PLACEHOLDER}
-                    className="w-full rounded-[8px] border border-[#8e9cd6] bg-[#f3f6ff] p-3 font-mono text-xs text-[#0b1437] placeholder:text-[#5c6694]"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleImportJson}
-                    disabled={!importText.trim()}
-                    className="h-9 w-full cursor-pointer rounded-[8px] border-2 border-[#2a55d6] bg-[#ffffff] text-sm font-semibold text-[#2a55d6] hover:bg-[#eaf0ff] disabled:opacity-45"
-                  >
-                    Import JSON ke Bank Soal
-                  </button>
-                </section>
               </div>
 
               {/* Right 7 cols: Question List */}

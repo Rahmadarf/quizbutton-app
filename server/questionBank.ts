@@ -276,22 +276,34 @@ export class QuestionBankStore {
     return true
   }
 
-  public importQuestions(inputs: QuestionInput[]): { added: number; skipped: number } {
+  public importQuestions(
+    inputs: QuestionInput[],
+    options?: { skipDuplicates?: boolean },
+  ): { added: number; skipped: number; duplicates: number } {
+    const skipDuplicates = options?.skipDuplicates ?? true
+    const existingPrompts = new Set(this.questions.map((q) => q.prompt.toLowerCase()))
     let added = 0
     let skipped = 0
+    let duplicates = 0
     for (const item of inputs) {
       const sanitized = sanitizeQuestion({ ...item, id: undefined })
       if (!sanitized) {
         skipped += 1
         continue
       }
+      const promptKey = sanitized.prompt.toLowerCase()
+      if (skipDuplicates && existingPrompts.has(promptKey)) {
+        duplicates += 1
+        continue
+      }
+      existingPrompts.add(promptKey)
       this.questions.push(sanitized)
       added += 1
     }
     if (added > 0) {
       this.save()
     }
-    return { added, skipped }
+    return { added, skipped, duplicates }
   }
 
   public seedSampleQuestions(): { added: number } {

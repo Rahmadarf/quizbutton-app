@@ -69,7 +69,9 @@ app.post('/api/bank/import', (req, res) => {
     return
   }
 
-  const result = questionBank.importQuestions(items)
+  const skipDuplicates =
+    typeof req.body?.skipDuplicates === 'boolean' ? req.body.skipDuplicates : true
+  const result = questionBank.importQuestions(items, { skipDuplicates })
   res.json({ ...result, bank: questionBank.getSummary() })
 })
 

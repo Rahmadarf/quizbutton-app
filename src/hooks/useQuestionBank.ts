@@ -62,11 +62,20 @@ export function useQuestionBank() {
   })
 
   const importQuestionsMutation = useMutation({
-    mutationFn: (questions: QuestionInput[]) =>
-      requestJson<{ added: number; skipped: number; bank: BankSummary }>('/api/bank/import', {
-        method: 'POST',
-        body: JSON.stringify({ questions }),
-      }),
+    mutationFn: ({
+      questions,
+      skipDuplicates = true,
+    }: {
+      questions: QuestionInput[]
+      skipDuplicates?: boolean
+    }) =>
+      requestJson<{ added: number; skipped: number; duplicates: number; bank: BankSummary }>(
+        '/api/bank/import',
+        {
+          method: 'POST',
+          body: JSON.stringify({ questions, skipDuplicates }),
+        },
+      ),
     onSuccess: (data) => updateCache(data.bank),
   })
 
